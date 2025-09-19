@@ -1,7 +1,9 @@
+// src/lib/storage.js
 import { useEffect, useState } from "react";
+import LOCAL_PLAYERS from "../../data/players.json"; // פֹּלְבֶּק סופי מתוך הריפו
 
 const LS = {
-  players: "katregel_players_v7",
+  players: "katregel_players_v8", // גרסה חדשה כדי להתעלם מנתונים ישנים
   cycles:  "katregel_cycles_v3",
   ui:      "katregel_ui_v3",
 };
@@ -16,8 +18,8 @@ export function useStorage() {
   useEffect(() => {
     (async () => {
       try {
-        const mapped = await fetchPlayersSmart();
-        setPlayers(mapped);
+        const list = await loadPlayersTripleFallback();
+        setPlayers(list);
 
         const cLS = safeParse(localStorage.getItem(LS.cycles)) || [];
         if (Array.isArray(cLS)) setCycles(cLS);
@@ -25,9 +27,9 @@ export function useStorage() {
         const uLS = safeParse(localStorage.getItem(LS.ui));
         if (uLS) setUi(uLS);
 
-        // דיבאג: בקונסול -> debugPlayers()
+        // דיבאג נוח: בקונסול → debugPlayers()
         window.debugPlayers = () =>
-          console.table(mapped.map(p => ({ name:p.name, pos:p.pos, rating:p.rating, active:p.active })));
+          console.table(list.map(p => ({ name:p.name, pos:p.pos, rating:p.rating, active:p.active })));
       } catch (e) {
         console.error("טעינת שחקנים נכשלה:", e);
         setPlayers([]);
@@ -51,28 +53,37 @@ export function useStorage() {
   };
 }
 
-/* 1) public/players.json → 2) /api/players (גיבוי) */
-async function fetchPlayersSmart() {
+/* ---------- טעינה: public → api → data מקומי ---------- */
+async function loadPlayersTripleFallback() {
+  // 1) public/players.json
   try {
     const r = await fetch("/players.json?ts=" + Date.now(), { cache:"no-store" });
     if (r.ok) {
-      const raw = await r.json();
-      const mapped = mapPlayers(raw);
-      if (hasPlayers(mapped)) return mapped;
+      const mapped = mapPlayers(await r.json());
+      if (hasPlayers(mapped)) { console.log("Loaded from /players.json"); return mapped; }
     } else {
       console.warn("public/players.json לא זמין (", r.status, ")");
     }
   } catch (e) {
-    console.warn("כשל בטעינת public/players.json", e);
+    console.warn("כשל בטעינת /players.json", e);
   }
-  const r2 = await fetch("/api/players?ts=" + Date.now(), { cache:"no-store" });
-  if (!r2.ok) throw new Error("api/players לא החזיר נתונים");
-  const raw2 = await r2.json();
-  return mapPlayers(raw2);
+
+  // 2) /api/players (מוגש מ-/data/players.json)
+  try {
+    const r2 = await fetch("/api/players?ts=" + Date.now(), { cache:"no-store" });
+    if (r2.ok) { const mapped = mapPlayers(await r2.json()); console.log("Loaded from /api/players"); return mapped; }
+    else console.warn("/api/players החזיר", r2.status);
+  } catch (e) {
+    console.warn("כשל בטעינת /api/players", e);
+  }
+
+  // 3) פֹּלְבֶּק אחרון: קובץ data מהריפו (נכנס לבאנדל)
+  console.log("Loaded from LOCAL data fallback");
+  return mapPlayers(LOCAL_PLAYERS);
 }
 
-/* מיפוי לשדות שלך: r / selected / prefer / avoid */
-function mapPlayers(arr) { return (Array.isArray(arr) ? arr : []).map(toPlayer); }
+/* ---------- מיפוי לשדות שלך: r / selected / prefer / avoid ---------- */
+function mapPlayers(arr){ return (Array.isArray(arr) ? arr : []).map(toPlayer); }
 function toPlayer(p = {}) {
   const rating = coerceRating(p.r ?? p.rating ?? p.rate ?? p.score ?? p["ציון"]);
   const name   = (typeof p.name === "string" && p.name.trim()) || p["שם"] || p["player"] || "";
@@ -81,7 +92,7 @@ function toPlayer(p = {}) {
   const mustWith  = Array.isArray(p.prefer) ? p.prefer : Array.isArray(p.mustWith) ? p.mustWith : [];
   const avoidWith = Array.isArray(p.avoid)  ? p.avoid  : Array.isArray(p.avoidWith)? p.avoidWith: [];
   return {
-    id: String(p.id || crypto.randomUUID()),
+    id: String(p.id ?? crypto.randomUUID()),
     name, pos,
     rating: isFinite(rating) ? clamp(rating, 1, 10) : 6.5,
     active: typeof p.selected === "boolean" ? p.selected
@@ -92,9 +103,11 @@ function toPlayer(p = {}) {
   };
 }
 
-/* עזרים */
-function coerceRating(v){ if(v==null) return NaN; if(typeof v==="number") return v;
-  if(typeof v==="string"){ const n = parseFloat(v.replace(",",".").trim()); return isFinite(n)?n:NaN; }
+/* ---------- עזרים ---------- */
+function coerceRating(v){
+  if (v==null) return NaN;
+  if (typeof v==="number") return v;
+  if (typeof v==="string"){ const n = parseFloat(v.replace(",",".").trim()); return isFinite(n)?n:NaN; }
   return NaN;
 }
 function hasPlayers(list){ return Array.isArray(list) && list.length > 0; }
