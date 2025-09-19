@@ -3,13 +3,13 @@ import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { useStorage, sum } from "../lib/storage.js";
 import Players from "./Players.jsx";
 
-const TEAMS_LS = "katregel_last_teams_v1";
+const TEAMS_LS = "katregel_last_teams_v2"; // גרסת מפתח חדשה לשחזור יציב
 
 export default function Teams() {
   const {
-    players, setPlayers,
+    players,
     hiddenRatings, setHiddenRatings,
-    cycles, setCycles,
+    setCycles,
   } = useStorage();
 
   const [teamCount, setTeamCount] = useState(4);
@@ -17,38 +17,42 @@ export default function Teams() {
 
   const activePlayers = useMemo(() => players.filter(p => p.active), [players]);
 
-  // שחזור כוחות מה־localStorage בכל כניסה למסך (וניקוי שמות לא רלוונטיים)
+  /* ---------- שחזור כוחות משמירה מקומית ---------- */
   useEffect(() => {
     try {
       const raw = localStorage.getItem(TEAMS_LS);
       if (!raw) return;
-      const idsGroups = JSON.parse(raw); // [[id,id...], ...]
+      const saved = JSON.parse(raw); // {teamCount, groups:[[id,id...], ...]}
+      if (!saved || !Array.isArray(saved.groups)) return;
       const idMap = new Map(players.map(p => [String(p.id), p]));
-      const restored = (Array.isArray(idsGroups) ? idsGroups : []).map(g =>
+      const restored = saved.groups.map(g =>
         (Array.isArray(g) ? g : []).map(id => idMap.get(String(id))).filter(Boolean)
       );
       if (restored.length) {
-        setTeamCount(restored.length);
+        setTeamCount(saved.teamCount || restored.length);
         setTeams(restored.map(sortByRatingDesc));
       }
     } catch {}
   }, [players]);
 
-  // כל שינוי בכוחות – נשמר מקומית
+  /* ---------- שמירת הכוחות מקומית בכל שינוי ---------- */
   useEffect(() => {
     if (!teams?.length) return;
-    const ids = teams.map(g => g.map(p => p.id));
-    localStorage.setItem(TEAMS_LS, JSON.stringify(ids));
+    const payload = {
+      teamCount: teams.length,
+      groups: teams.map(g => g.map(p => String(p.id))),
+    };
+    localStorage.setItem(TEAMS_LS, JSON.stringify(payload));
   }, [teams]);
 
-  // עשה כוחות – איזון לפי ממוצע (ולא רק סה״כ), עם חלוקת גדלים שוויונית + אופטימיזציה
+  /* ---------- עשה כוחות: איזון לפי ממוצע ---------- */
   const makeBalancedTeams = useCallback(() => {
     let g = balancedByAverage(activePlayers, teamCount);
     g = optimizeByAverage(g, 2500); // חיזוק האיזון
     setTeams(g.map(sortByRatingDesc));
   }, [activePlayers, teamCount]);
 
-  // קבע כוחות – שומר למחזור
+  /* ---------- קבע כוחות (שומר למחזור) ---------- */
   const saveTeams = () => {
     if (!teams.some(t => t.length)) return alert("אין קבוצות לשמירה.");
     const payload = {
@@ -61,7 +65,7 @@ export default function Teams() {
     alert("הכוחות נשמרו למחזור.");
   };
 
-  // Drag & Drop
+  /* ---------- Drag & Drop ---------- */
   const onDragStart = (e, pid, fromIdx) => {
     e.dataTransfer.setData("text/plain", JSON.stringify({ pid, fromIdx }));
   };
@@ -154,7 +158,7 @@ export default function Teams() {
 
       <div className="teams-grid">{teams.map(renderTeam)}</div>
 
-      {/* רשימת שחקנים מתגלגלת פנימית */}
+      {/* רשימת שחקנים – גלילה פנימית בלבד */}
       <div className="players-scroll">
         <Players />
       </div>
@@ -162,18 +166,17 @@ export default function Teams() {
   );
 }
 
-/* ----------------- פונקציות עזר ----------------- */
+/* ---------- עזרי איזון ---------- */
 function avg(arr, sel = (x)=>x){ if(!arr?.length) return 0; return arr.reduce((a,x)=>a+(sel(x)||0),0)/arr.length; }
 function sortByRatingDesc(a){ return [...a].sort((x,y)=>y.rating-x.rating); }
 function emptyTeams(n){ return Array.from({length:n},()=>[]); }
 function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]];} return a; }
 
-/* חלוקה התחלתית לפי ממוצע: מוודא גודל קבוצות כמעט זהה (הפרש מקס' 1) */
+/* חלוקה התחלתית לפי ממוצע עם גדלים כמעט שווים */
 function balancedByAverage(players, k){
   const sorted = [...players].sort((a,b)=>b.rating-a.rating);
   const sizes = desiredSizes(sorted.length, k);
   const groups = Array.from({length:k}, ()=>[]);
-  // Snake draft לעמידה טובה על הממוצעים והגדלים
   let dir = 1, i = 0;
   for(const p of sorted){
     while(groups[i].length >= sizes[i]) i = nextIndex(i, k, dir);
@@ -187,30 +190,23 @@ function desiredSizes(n,k){
   const base = Math.floor(n/k), extra = n%k;
   return Array.from({length:k},(_,i)=> base + (i<extra?1:0));
 }
-function nextIndex(i,k,dir){ const j = i+dir; return j<0?0:j>=k?k-1:j; }
+function nextIndex(i,k,dir){ const j=i+dir; return j<0?0:j>=k?k-1:j; }
 
-/* אופטימיזציה: ממזערים את סטיית התקן של הממוצעים, בלי לשבור את גדלי הקבוצות */
+/* אופטימיזציה – ממזערת סטיית תקן של ממוצעי הקבוצות (ללא שינוי גודל קבוצה) */
 function optimizeByAverage(groups, iters=2000){
   const k = groups.length;
-  const sizes = groups.map(g => g.length);
   const g = groups.map(a=>a.slice());
   let score = stdev(g.map(t=>avg(t,x=>x.rating)));
-
   for(let t=0;t<iters;t++){
     const i = Math.floor(Math.random()*k);
     let j = Math.floor(Math.random()*k); if(j===i) j=(j+1)%k;
     const ai = Math.floor(Math.random()*g[i].length);
     const aj = Math.floor(Math.random()*g[j].length);
-    const A = g[i][ai], B = g[j][aj];
-    if(!A || !B) continue;
-
-    // swap
+    const A = g[i][ai], B = g[j][aj]; if(!A || !B) continue;
     g[i][ai] = B; g[j][aj] = A;
     const newScore = stdev(g.map(t=>avg(t,x=>x.rating)));
-    if(newScore <= score) { score = newScore; }
-    else { // לא שיפר – מחזירים
-      g[i][ai] = A; g[j][aj] = B;
-    }
+    if(newScore <= score) score = newScore;
+    else { g[i][ai] = A; g[j][aj] = B; }
   }
   return g;
 }
