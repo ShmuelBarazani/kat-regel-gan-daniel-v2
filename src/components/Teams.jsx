@@ -1,137 +1,178 @@
 // src/components/Teams.jsx
-import React, { useMemo, useState } from "react";
-import { useStorage, POS, sum } from "../lib/storage.js";
-import Players from "./Players.jsx";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
+import { useStorage, POS, sum, avg } from "../lib/storage.js";
 
-export default function Teams({ mode = "build" }) {
-  const { players, hiddenRatings, cycles, setCycles } = useStorage();
-  const [numTeams, setNumTeams] = useState(4);
-  const [teams, setTeams] = useState(() => makeEmpty(numTeams));
-  const actives = useMemo(() => players.filter(p => p.active), [players]);
+export default function Teams() {
+  const {
+    players,
+    setPlayers,
+    hiddenRatings,
+    setHiddenRatings,
+  } = useStorage();
 
-  // בנה קבוצות אוטומטיות
-  function build() {
-    if (!actives.length) { alert("אין שחקנים מסומנים למשחק"); return; }
-    const buckets = makeEmpty(numTeams);
-    // פזר GK
-    const gk = actives.filter(p => p.pos === "GK").sort((a,b)=>b.rating-a.rating);
-    gk.forEach(p => place(p, buckets));
-    // פזר שאר
-    const rest = actives.filter(p => p.pos !== "GK").sort((a,b)=>b.rating-a.rating);
-    rest.forEach(p => place(p, buckets));
-    setTeams(buckets);
-  }
+  const [teamCount, setTeamCount] = useState(4);
+  const [teams, setTeams] = useState(() => emptyTeams(4));
 
-  // שמירת מחזור
-  function saveCycle() {
-    const stamp = new Date().toISOString().slice(0,19).replace("T"," ");
-    const payload = { id: crypto.randomUUID(), at: stamp, teams };
-    setCycles(prev => [payload, ...prev]);
-    alert("המחזור נשמר");
-  }
+  // שחקנים פעילים
+  const activePlayers = useMemo(
+    () => players.filter((p) => p.active),
+    [players]
+  );
 
-  // DnD
-  function onDragStart(e, playerId, fromIdx) {
-    e.dataTransfer.setData("playerId", playerId);
-    e.dataTransfer.setData("fromIdx", String(fromIdx));
-  }
-  function onDrop(e, toIdx) {
-    const playerId = e.dataTransfer.getData("playerId");
-    const fromIdx = Number(e.dataTransfer.getData("fromIdx"));
-    if (!playerId || Number.isNaN(fromIdx)) return;
+  // יצירת כוחות מאוזנים ע"פ ציונים — כל לחיצה יוצרת חלוקה אחרת
+  const makeBalancedTeams = useCallback(() => {
+    const next = balancedPartition(activePlayers, teamCount);
+    setTeams(next.map(sortByRatingDesc));
+  }, [activePlayers, teamCount]);
 
-    setTeams(prev => {
-      const next = prev.map(t => ({ ...t, players: [...t.players] }));
-      const from = next[fromIdx];
-      const to = next[toIdx];
-      const i = from.players.findIndex(p => p.id === playerId);
-      if (i === -1) return prev;
-      const [p] = from.players.splice(i,1);
-      to.players.push(p);
-      from.sum = sum(from.players, x=>x.rating);
-      to.sum = sum(to.players, x=>x.rating);
+  // מיון יורד לאחר גרירה/שינוי
+  const sortTeam = (idx) =>
+    setTeams((prev) => {
+      const next = [...prev];
+      next[idx] = sortByRatingDesc(next[idx]);
       return next;
     });
-  }
 
-  // איפוס
-  function clearTeams(){ setTeams(makeEmpty(numTeams)); }
+  // Drag & Drop בסיסי (HTML5)
+  const onDragStart = (e, pid, fromIdx) => {
+    e.dataTransfer.setData("text/plain", JSON.stringify({ pid, fromIdx }));
+  };
+  const onDrop = (e, toIdx) => {
+    e.preventDefault();
+    try {
+      const { pid, fromIdx } = JSON.parse(e.dataTransfer.getData("text/plain"));
+      if (fromIdx === toIdx) return;
+      setTeams((prev) => {
+        const next = prev.map((g) => g.slice());
+        const i = next[fromIdx].findIndex((x) => x.id === pid);
+        if (i >= 0) {
+          const [pl] = next[fromIdx].splice(i, 1);
+          next[toIdx].push(pl);
+          next[toIdx] = sortByRatingDesc(next[toIdx]);
+          next[fromIdx] = sortByRatingDesc(next[fromIdx]);
+        }
+        return next;
+      });
+    } catch {}
+  };
 
-  const totals = useMemo(() => actives.length, [actives]);
+  // רנדר קבוצה
+  const renderTeam = (team, idx) => {
+    const total = sum(team, (p) => p.rating);
+    const average = team.length ? total / team.length : 0;
 
+    return (
+      <div
+        key={idx}
+        className="team-card"
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => onDrop(e, idx)}
+        data-hide-ratings={hiddenRatings ? "true" : "false"}
+        dir="rtl"
+      >
+        <div className="team-header">
+          <div>קבוצה {idx + 1}</div>
+          <div className="team-metrics">
+            <span>ממוצע {average.toFixed(2)}</span>
+            <span> | סה״כ {total.toFixed(2)}</span>
+          </div>
+        </div>
+
+        <ul className="team-list">
+          {team.map((p) => (
+            <li
+              key={p.id}
+              className="team-row"
+              draggable
+              onDragStart={(e) => onDragStart(e, p.id, idx)}
+              title={`${p.name} • ${p.pos} • ${p.rating.toFixed(1)}`}
+            >
+              {/* שם (מימין) → תפקיד → ציון */}
+              <span className="cell name">{p.name}</span>
+              <span className="cell pos">{p.pos}</span>
+              <span className="cell rating">{p.rating.toFixed(1)}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  };
+
+  // UI עליון – בלי כפילויות "עשה מחזור/קבע מחזור"
   return (
-    <div className="panel">
-      <div className="panel-header">
-        <h2>קבוצות למחזור</h2>
-        <div className="actions">
-          <label className="inline">
-            <span>מס' קבוצות:</span>
-            <select className="inp small" value={numTeams} onChange={e => { setNumTeams(Number(e.target.value)); clearTeams(); }}>
-              {[2,3,4,5,6,7,8].map(n => <option key={n} value={n}>{n}</option>)}
-            </select>
-          </label>
-          <button className="btn accent" onClick={build}>עשה מחזור</button>
-          <button className="btn" onClick={saveCycle}>שמור מחזור</button>
-          <span className="muted">מסומנים למשחק: {totals}</span>
+    <div className="teams-page">
+      <div className="toolbar" dir="rtl">
+        <button className="btn primary" onClick={makeBalancedTeams}>
+          עשה כוחות
+        </button>
+
+        <label className="toolbar-item">
+          מס׳ קבוצות:
+          <select
+            value={teamCount}
+            onChange={(e) => {
+              const n = Number(e.target.value || 4);
+              setTeamCount(n);
+              setTeams(emptyTeams(n));
+            }}
+          >
+            {[2, 3, 4, 5, 6].map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="toolbar-item">
+          הסתר ציונים
+          <input
+            type="checkbox"
+            checked={hiddenRatings}
+            onChange={(e) => setHiddenRatings(e.target.checked)}
+          />
+        </label>
+
+        <div className="toolbar-note">
+          טיפ: כל לחיצה על <b>עשה כוחות</b> תיצור חלוקה חדשה ומאוזנת.
         </div>
       </div>
 
-      {/* קבוצות מעל הטבלה */}
-      <div className="teams-grid">
-        {teams.map((t, idx) => (
-          <div key={idx}
-               className="team-card"
-               onDragOver={(e)=>e.preventDefault()}
-               onDrop={(e)=>onDrop(e, idx)}
-          >
-            <div className="team-head">
-              <div className="team-title">קבוצה {idx+1}</div>
-              <div className="team-meta">
-                סה״כ {t.sum.toFixed(2)} | ממוצע {(t.players.length? (t.sum/t.players.length):0).toFixed(2)}
-              </div>
-            </div>
-            <div className="team-body">
-              <ul>
-                {t.players.map(p => (
-                  <li key={p.id} draggable
-                      onDragStart={(e)=>onDragStart(e, p.id, idx)}
-                      title="גרור לשינוי קבוצה">
-                    <span className="pos">{p.pos}</span>
-                    <span className="nm">{p.name}</span>
-                    <span className="rt">{hiddenRatings ? "—" : Number(p.rating).toFixed(1)}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* טבלת השחקנים למטה */}
-      <Players />
+      <div className="teams-grid">{teams.map(renderTeam)}</div>
     </div>
   );
 }
 
-// אלגוריתם הנחתה פשוט עם עדיפויות: סכום נמוך, יעד עמדות, פיזור
-function place(p, buckets) {
-  let best = 0, bestScore = Infinity;
-  for (let i=0;i<buckets.length;i++){
-    const t = buckets[i];
-    const score = t.sum + (t.posCounts[p.pos]||0)*2; // קנס קל על עומס בעמדה
-    if (score < bestScore){ bestScore = score; best = i; }
+/* ----------------- עזרי חלוקה ומיון ----------------- */
+
+// חלוקה מאוזנת: מסדרים לפי ציון יורד ומכניסים כל פעם לקבוצה עם סכום נמוך ביותר.
+// ערבוב קל לפני – כדי שכל לחיצה תיתן קומבינציה אחרת אבל עדיין מאוזנת.
+function balancedPartition(players, k) {
+  const shuffled = shuffle([...players]);
+  shuffled.sort((a, b) => b.rating - a.rating);
+
+  const groups = Array.from({ length: k }, () => []);
+  const sums = new Array(k).fill(0);
+
+  for (const p of shuffled) {
+    let gi = 0;
+    for (let i = 1; i < k; i++) if (sums[i] < sums[gi]) gi = i;
+    groups[gi].push(p);
+    sums[gi] += Number(p.rating || 0);
   }
-  const t = buckets[best];
-  t.players.push(p);
-  t.sum += p.rating || 0;
-  t.posCounts[p.pos] = (t.posCounts[p.pos]||0)+1;
+  return groups;
 }
 
-function makeEmpty(n){
-  return Array.from({length:n}, (_,i)=>({
-    name:`קבוצה ${i+1}`,
-    players:[],
-    sum:0,
-    posCounts:{}
-  }));
+function sortByRatingDesc(arr) {
+  return [...arr].sort((a, b) => Number(b.rating) - Number(a.rating));
+}
+function emptyTeams(n) {
+  return Array.from({ length: n }, () => []);
+}
+function shuffle(a) {
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
 }
