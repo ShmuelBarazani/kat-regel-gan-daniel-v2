@@ -1,108 +1,82 @@
 // src/lib/storage.js
-// שכבת אחסון: טעינה ושמירה של players/cycles מ-GitHub (דרך /api/read ו-/api/save)
-// עם נפילה ל-localStorage אם ה-API לא זמין.
+import { useEffect, useMemo, useState } from "react";
 
-const LS_PLAYERS = "krgd_v2_players";
-const LS_CYCLES  = "krgd_v2_cycles";
+const LS = {
+  players: "katregel_players_v3",
+  cycles: "katregel_cycles_v3",
+  ui: "katregel_ui_v3",
+};
 
-const REMOTE_PLAYERS_PATH = "data/players.json";
-const REMOTE_CYCLES_PATH  = "data/cycles.json";
+const PUBLIC_JSON = "/players.json"; // שים ב-public
 
-// debounce למניעת שמירות/קריאות תכופות
-export function debounce(fn, ms = 800) {
-  let t;
-  return (...args) => {
-    clearTimeout(t);
-    t = setTimeout(() => fn(...args), ms);
+export function useStorage() {
+  const [players, setPlayers] = useState([]);
+  const [cycles, setCycles] = useState([]); // מחזורים שמורים
+  const [ui, setUi] = useState({ hiddenRatings: false, bonusWeek: false, bonusMonth: false });
+
+  // טעינה
+  useEffect(() => {
+    try {
+      const p = JSON.parse(localStorage.getItem(LS.players) || "null");
+      const c = JSON.parse(localStorage.getItem(LS.cycles) || "[]");
+      const u = JSON.parse(localStorage.getItem(LS.ui) || "null");
+      if (Array.isArray(p) && p.length) setPlayers(p);
+      else fetchPublicPlayers().then(setPlayers).catch(() => setPlayers([]));
+      if (Array.isArray(c)) setCycles(c);
+      if (u) setUi(u);
+    } catch {
+      fetchPublicPlayers().then(setPlayers).catch(() => setPlayers([]));
+    }
+  }, []);
+
+  // שמירה
+  useEffect(() => {
+    localStorage.setItem(LS.players, JSON.stringify(players));
+  }, [players]);
+
+  useEffect(() => {
+    localStorage.setItem(LS.cycles, JSON.stringify(cycles));
+  }, [cycles]);
+
+  useEffect(() => {
+    localStorage.setItem(LS.ui, JSON.stringify(ui));
+  }, [ui]);
+
+  const hiddenRatings = ui.hiddenRatings;
+  const setHiddenRatings = (v) => setUi(s => ({ ...s, hiddenRatings: v }));
+  const bonusWeek = ui.bonusWeek;
+  const bonusMonth = ui.bonusMonth;
+  const setBonusWeek = (v) => setUi(s => ({ ...s, bonusWeek: v }));
+  const setBonusMonth = (v) => setUi(s => ({ ...s, bonusMonth: v }));
+
+  return {
+    players, setPlayers,
+    cycles, setCycles,
+    hiddenRatings, setHiddenRatings,
+    bonusWeek, bonusMonth, setBonusWeek, setBonusMonth,
   };
 }
 
-/* -------------------- LOAD -------------------- */
-
-export async function loadPlayers() {
-  // 1) לטעון דרך ה-API מה-GitHub
-  try {
-    const r = await fetch(`/api/read?path=${encodeURIComponent(REMOTE_PLAYERS_PATH)}`, { cache: "no-store" });
-    if (r.ok) {
-      const json = await r.json();
-      return (Array.isArray(json) ? json : []).map(p => ({
-        ...p,
-        rating: typeof p.rating === "number" ? p.rating : Number(p.r) || 0
-      }));
-    }
-  } catch {}
-
-  // 2) אם נכשל – נסה קובץ סטטי (רק אם במקרה נמצא גם ב-public)
-  try {
-    const r2 = await fetch(`/${REMOTE_PLAYERS_PATH}`, { cache: "no-store" });
-    if (r2.ok) {
-      const json = await r2.json();
-      return Array.isArray(json) ? json : [];
-    }
-  } catch {}
-
-  // 3) נפילה ל-localStorage
-  try {
-    const raw = localStorage.getItem(LS_PLAYERS);
-    if (raw) return JSON.parse(raw);
-  } catch {}
-
-  return [];
+async function fetchPublicPlayers() {
+  const r = await fetch(PUBLIC_JSON);
+  if (!r.ok) return [];
+  const raw = await r.json();
+  return (raw || []).map(p => ({
+    id: p.id || crypto.randomUUID(),
+    name: p.name || "",
+    pos: p.pos || "MF",
+    rating: typeof p.rating === "number" ? p.rating : 6.5,
+    active: typeof p.active === "boolean" ? p.active : false, // ברירת-מחדל: לא משחק אם לא צוין
+    mustWith: Array.isArray(p.mustWith) ? p.mustWith : [],
+    avoidWith: Array.isArray(p.avoidWith) ? p.avoidWith : [],
+  }));
 }
 
-export async function loadCycles() {
-  try {
-    const r = await fetch(`/api/read?path=${encodeURIComponent(REMOTE_CYCLES_PATH)}`, { cache: "no-store" });
-    if (r.ok) {
-      const json = await r.json();
-      return Array.isArray(json) ? json : [];
-    }
-  } catch {}
-
-  try {
-    const r2 = await fetch(`/${REMOTE_CYCLES_PATH}`, { cache: "no-store" });
-    if (r2.ok) {
-      const json = await r2.json();
-      return Array.isArray(json) ? json : [];
-    }
-  } catch {}
-
-  try {
-    const raw = localStorage.getItem(LS_CYCLES);
-    if (raw) return JSON.parse(raw);
-  } catch {}
-
-  return [];
-}
-
-/* -------------------- SAVE -------------------- */
-
-// ניסיון שמירה מרוחק ל-GitHub דרך פונקציית השרת /api/save
-async function saveRemote(path, content, message) {
-  try {
-    const r = await fetch("/api/save", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path, content, message })
-    });
-    if (!r.ok) throw new Error(`API ${r.status}`);
-    return true;
-  } catch (e) {
-    console.warn("Remote save failed → fallback to localStorage", e);
-    return false;
-  }
-}
-
-export async function savePlayers(players, commitMessage = "update players.json") {
-  const ok = await saveRemote(REMOTE_PLAYERS_PATH, players, commitMessage);
-  if (!ok) {
-    localStorage.setItem(LS_PLAYERS, JSON.stringify(players));
-  }
-}
-
-export async function saveCycles(cycles, commitMessage = "update cycles.json") {
-  const ok = await saveRemote(REMOTE_CYCLES_PATH, cycles, commitMessage);
-  if (!ok) {
-    localStorage.setItem(LS_CYCLES, JSON.stringify(cycles));
-  }
+// עזרי חישוב
+export const POS = ["GK", "DF", "MF", "FW"];
+export function sum(arr, sel = (x) => x) { return arr.reduce((a, x) => a + (sel(x) || 0), 0); }
+export function avg(arr, sel = (x) => x) {
+  if (!arr.length) return 0;
+  const s = sum(arr, sel);
+  return s / arr.length;
 }
