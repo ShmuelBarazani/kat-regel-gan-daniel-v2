@@ -102,3 +102,28 @@ select{ appearance:none; }
 /* גלילה פנימית לרשימת השחקנים + ריווח לכפתור */
 .players-scroll { margin-top: 12px; max-height: 460px; overflow: auto; }
 .players-page .toolbar { margin: 6px 0 10px; }
+/* גלילה פנימית לרשימת השחקנים בעמוד "קבוצות" */
+.players-scroll {
+  margin-top: 12px;
+  max-height: 55vh;   /* אפשר לכוון */
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 6px;
+  background: var(--panel);
+}
+
+/* ריווח ברור לכפתור הוסף שחקן, שלא יהיה "צמוד" לטבלה */
+.players-page .players-toolbar { margin: 8px 8px 10px; }
+
+/* מולטי-סלקט לעריכת "חייב עם / לא עם" */
+.players-table select.multi {
+  min-width: 180px;
+  background: #0f2227;
+  color: #daf;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+/* מודאל מעל הכל – כדי שתמיד יהיה קליקבילי */
+.modal-backdrop { z-index: 10000; }
