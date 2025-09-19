@@ -1,66 +1,59 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-/* ---------- בסיס עיצוב למסכים ---------- */
 :root{
-  --ink:#e8eefc; --muted:#9fb0cb;
-  --bg:#0b1220; --card:#0f1a2e; --edge:#223147;
-  --good:#27c463; --warn:#ff5c7a; --sky:#38bdf8; --emerald:#34d399;
+  --bg:#0b1220; --card:#101a2c; --ink:#e8eefc; --muted:#9fb0cb;
+  --edge:#223049; --accent:#1db954; --accent2:#2ea987; --warn:#ff5c7a;
 }
+*{box-sizing:border-box}
+html,body,#root{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:Heebo,system-ui,-apple-system,Segoe UI,Roboto,Noto Sans Hebrew,Arial,sans-serif}
 
-html,body{background:var(--bg);color:var(--ink);font-family:Heebo,system-ui,-apple-system,Segoe UI,Roboto,Noto Sans Hebrew,Arial,sans-serif}
-.container{max-width:72rem;margin:0 auto}
+.app{max-width:1200px;margin:22px auto;padding:0 12px}
 
-/* כפתורים קטנים */
-.btn{
-  @apply px-3 py-2 rounded-2xl text-sm border transition;
-  border-color:#334155;
-}
-.btn:hover{background:#0b1527}
-.btn-primary{border-color:#38bdf8;background:rgba(56,189,248,.1)}
-.btn-primary:hover{background:rgba(56,189,248,.2)}
-.btn-danger{border-color:#ef4444;background:rgba(239,68,68,.08)}
-.btn-danger:hover{background:rgba(239,68,68,.15)}
-.btn-success{border-color:#22c55e;background:rgba(34,197,94,.1)}
-.btn-success:hover{background:rgba(34,197,94,.2)}
-.input{ @apply bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm; }
+/* Top Bar */
+.topbar{display:grid;grid-template-columns:200px 1fr auto;gap:12px;align-items:center;margin-bottom:12px}
+.brand{display:flex;align-items:center;gap:8px;font-weight:800}
+.logo{display:inline-flex;width:28px;height:28px;align-items:center;justify-content:center;background:#14302a;border:1px solid #295c4d;border-radius:999px}
+.tabs{display:flex;flex-wrap:wrap;gap:6px}
+.tab{background:#0e2221;border:1px solid #2a5e55;color:#bff0d5;border-radius:999px;padding:6px 10px;cursor:pointer}
+.tab.active{background:#0f2a22;border-color:#2e8b72}
+.actions{display:flex;align-items:center;gap:8px}
 
-/* טבלאות */
-.table{
-  width:100%;
-  border-collapse:separate;
-  border-spacing:0;
-  overflow:hidden;
-  border-radius:1rem;
-  border:1px solid #1f2a3a;
-  background:#0f1a2e;
-}
-.table th,.table td{padding:.6rem .75rem;border-bottom:1px solid #1f2a3a}
-.table th{color:#9fb0cb;text-align:right;font-weight:600;background:#0d1526}
+/* Panel & table */
+.panel{background:var(--card);border:1px solid var(--edge);border-radius:14px;margin:14px 0;box-shadow:0 2px 10px rgba(0,0,0,.25)}
+.panel-header{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--edge)}
+.panel-header h2{margin:0;font-size:20px}
+.actions .pill,.pill{background:#112333;border:1px solid #29445f;color:#d9e6ff;padding:4px 8px;border-radius:999px;cursor:pointer;font-size:12px}
+.pill.warn{border-color:#704252;color:#ffd6de}
+.pill.active{background:#1c2a3e;border-color:#4b6b94}
+.btn{background:#0f2b1e;border:1px solid #174a33;color:#bff0d5;padding:8px 12px;border-radius:10px;cursor:pointer}
+.btn.accent{background:#0f2a22;border-color:#2e8b72}
 
-/* קופסאות/כרטיסים */
-.card{border:1px solid #1f2a3a;background:#0f1a2e;border-radius:1rem;padding:1rem}
-.card-title{font-weight:700;margin-bottom:.5rem}
+.table-wrap{max-height:440px;overflow:auto;margin:8px 12px 12px}
+.tbl{width:100%;border-collapse:separate;border-spacing:0}
+.tbl thead th{position:sticky;top:0;background:#173b2c;border-bottom:1px solid var(--edge);color:#d7ffe7;padding:10px;text-align:right}
+.tbl thead th.sortable{cursor:pointer}
+.th-flex{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.arrow{opacity:.8;font-size:12px}
+.tbl tbody td{border-bottom:1px solid #132032;padding:8px 10px;vertical-align:middle}
+.center{text-align:center}
+.muted{color:var(--muted)}
+.inp{width:100%;background:#0e1523;color:var(--ink);border:1px solid #28344c;border-radius:10px;padding:6px 8px}
+.inp.small{width:auto}
+.cell-tags{display:flex;align-items:center;gap:8px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{background:#0e2137;border:1px solid #2b486b;color:#d9e6ff;border-radius:999px;padding:2px 8px;font-size:12px}
 
-/* תגים */
-.tag{display:inline-flex;align-items:center;gap:.4rem;padding:.25rem .5rem;border:1px solid #2b3a55;border-radius:999px;font-size:.75rem;color:#b7c7e4}
-.tag.sky{border-color:#38bdf8}
-.tag.good{border-color:#34d399}
-.tag.warn{border-color:#f97316}
-
-/* ---------- הדפסה: A4 נוף, מסגרות שחורות, ללא שכפולים ---------- */
-@media print {
-  body{background:#fff;color:#000}
-  header, footer, nav, .no-print{display:none !important}
-  .print-page{
-    width:100%;
-    border:1px solid #000;
-    page-break-after:always;
-    padding:8mm;
-  }
-}
-@page{
-  size:A4 landscape;
-  margin:10mm;
-}
+/* Teams grid */
+.teams-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;padding:12px}
+@media (max-width:1000px){.teams-grid{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:560px){.teams-grid{grid-template-columns:1fr}}
+.team-card{background:#0f1726;border:1px solid #20304a;border-radius:12px;overflow:hidden}
+.team-head{display:flex;align-items:center;justify-content:space-between;background:#14253c;color:#cff;padding:8px 10px;border-bottom:1px solid #20304a}
+.team-title{font-weight:700}
+.team-body{padding:6px 10px}
+.team-body ul{margin:0;padding:0;list-style:none}
+.team-body li{display:grid;grid-template-columns:56px 1fr 56px;gap:8px;padding:6px 0;border-bottom:1px dashed #22334f}
+.team-body li .pos{opacity:.85}
+.team-body li .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.team-body li .rt{text-align:left}
+.print .print-body{padding:12px}
+.print-list{columns:2;gap:16px}
