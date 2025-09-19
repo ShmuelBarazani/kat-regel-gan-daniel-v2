@@ -1,4 +1,4 @@
-// api/players.js  — גרסת ESM עבור Vercel + Vite ("type": "module")
+// api/players.js — Vercel serverless (ESM)
 import data from "../data/players.json" assert { type: "json" };
 
 export default function handler(req, res) {
