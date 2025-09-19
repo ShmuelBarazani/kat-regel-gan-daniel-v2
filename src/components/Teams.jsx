@@ -1,7 +1,9 @@
 // src/components/Teams.jsx
 import React, { useEffect, useMemo, useState, useCallback } from "react";
-import { useStorage, POS, sum, avg } from "../lib/storage.js";
+import { useStorage, sum } from "../lib/storage.js";
 import Players from "./Players.jsx";
+
+const TEAMS_LS = "katregel_last_teams_v1";
 
 export default function Teams() {
   const {
@@ -13,30 +15,53 @@ export default function Teams() {
   const [teamCount, setTeamCount] = useState(4);
   const [teams, setTeams] = useState(() => emptyTeams(4));
 
-  // רק שחקנים פעילים
   const activePlayers = useMemo(() => players.filter(p => p.active), [players]);
 
-  // יצירת כוחות מאוזנים – בכל לחיצה קומבינציה שונה אך עם ממוצעים קרובים
+  // שחזור כוחות מה־localStorage בכל כניסה למסך (וניקוי שמות לא רלוונטיים)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(TEAMS_LS);
+      if (!raw) return;
+      const idsGroups = JSON.parse(raw); // [[id,id...], ...]
+      const idMap = new Map(players.map(p => [String(p.id), p]));
+      const restored = (Array.isArray(idsGroups) ? idsGroups : []).map(g =>
+        (Array.isArray(g) ? g : []).map(id => idMap.get(String(id))).filter(Boolean)
+      );
+      if (restored.length) {
+        setTeamCount(restored.length);
+        setTeams(restored.map(sortByRatingDesc));
+      }
+    } catch {}
+  }, [players]);
+
+  // כל שינוי בכוחות – נשמר מקומית
+  useEffect(() => {
+    if (!teams?.length) return;
+    const ids = teams.map(g => g.map(p => p.id));
+    localStorage.setItem(TEAMS_LS, JSON.stringify(ids));
+  }, [teams]);
+
+  // עשה כוחות – איזון לפי ממוצע (ולא רק סה״כ), עם חלוקת גדלים שוויונית + אופטימיזציה
   const makeBalancedTeams = useCallback(() => {
-    let g = balancedGreedy(activePlayers, teamCount);
-    g = optimizeGroups(g, 1500); // הורדת סטיית תקן של סכומי ציונים
+    let g = balancedByAverage(activePlayers, teamCount);
+    g = optimizeByAverage(g, 2500); // חיזוק האיזון
     setTeams(g.map(sortByRatingDesc));
   }, [activePlayers, teamCount]);
 
-  // שמירת הכוחות למחזור
+  // קבע כוחות – שומר למחזור
   const saveTeams = () => {
     if (!teams.some(t => t.length)) return alert("אין קבוצות לשמירה.");
     const payload = {
       id: crypto.randomUUID(),
       createdAt: new Date().toISOString(),
       groups: teams.map(g => g.map(p => p.id)),
-      sums: teams.map(g => sum(g, x => x.rating)),
+      avgs: teams.map(g => avg(g, x => x.rating)),
     };
     setCycles(prev => [payload, ...prev]);
     alert("הכוחות נשמרו למחזור.");
   };
 
-  // גרירה בין קבוצות
+  // Drag & Drop
   const onDragStart = (e, pid, fromIdx) => {
     e.dataTransfer.setData("text/plain", JSON.stringify({ pid, fromIdx }));
   };
@@ -60,8 +85,8 @@ export default function Teams() {
   };
 
   const renderTeam = (team, idx) => {
+    const average = team.length ? avg(team, p => p.rating) : 0;
     const total = sum(team, p => p.rating);
-    const average = team.length ? total / team.length : 0;
 
     return (
       <div
@@ -89,7 +114,6 @@ export default function Teams() {
               onDragStart={e => onDragStart(e, p.id, idx)}
               title={`${p.name} • ${p.pos} • ${p.rating.toFixed(1)}`}
             >
-              {/* שם → תפקיד → ציון */}
               <span className="cell name">{p.name}</span>
               <span className="cell pos">{p.pos}</span>
               <span className="cell rating">{p.rating.toFixed(1)}</span>
@@ -110,7 +134,11 @@ export default function Teams() {
           מס׳ קבוצות:
           <select
             value={teamCount}
-            onChange={e => { const n = Number(e.target.value||4); setTeamCount(n); setTeams(emptyTeams(n)); }}
+            onChange={(e) => {
+              const n = Number(e.target.value || 4);
+              setTeamCount(n);
+              setTeams(emptyTeams(n));
+            }}
           >
             {[2,3,4,5,6].map(n => <option key={n} value={n}>{n}</option>)}
           </select>
@@ -126,72 +154,64 @@ export default function Teams() {
 
       <div className="teams-grid">{teams.map(renderTeam)}</div>
 
-      {/* טבלת השחקנים מתחת לכוחות */}
-      <div style={{marginTop: "1rem"}}>
+      {/* רשימת שחקנים מתגלגלת פנימית */}
+      <div className="players-scroll">
         <Players />
       </div>
     </div>
   );
 }
 
-/* ---------- חלוקה ומיטוב לאיזון ממוצעים ---------- */
-function balancedGreedy(players, k){
-  const shuffled = shuffle([...players]);
-  shuffled.sort((a,b)=>b.rating-a.rating); // חזקים קודם
-  const groups = Array.from({length:k},()=>[]);
-  const sums = new Array(k).fill(0);
-  for(const p of shuffled){
-    let gi = 0;
-    for(let i=1;i<k;i++) if(sums[i] < sums[gi]) gi = i;
-    groups[gi].push(p);
-    sums[gi] += Number(p.rating||0);
-  }
-  return groups;
-}
-
-// הורדת סטיית תקן של סכומי הקבוצות ע"י החלפות/העברות אקראיות שמקטינות את הפונקציה
-function optimizeGroups(groups, iters=1000){
-  const k = groups.length;
-  const g = groups.map(arr=>arr.slice());
-  let sums = g.map(team=>sum(team,p=>p.rating));
-  let best = {score: stdev(sums), g: g.map(t=>t.slice()), sums:[...sums]};
-  for(let t=0;t<iters;t++){
-    const i = Math.floor(Math.random()*k);
-    let j = Math.floor(Math.random()*k);
-    if(j===i) j = (j+1)%k;
-
-    // ננסה או swap או move
-    if(g[i].length && g[j].length && Math.random()<0.7){
-      const ai = Math.floor(Math.random()*g[i].length);
-      const aj = Math.floor(Math.random()*g[j].length);
-      const a = g[i][ai], b = g[j][aj];
-      const di = b.rating - a.rating;
-      const dj = a.rating - b.rating;
-      const nsums = sums.slice();
-      nsums[i] += di; nsums[j] += dj;
-      if(stdev(nsums) <= stdev(sums)){
-        // משפר – נבצע
-        [g[i][ai], g[j][aj]] = [b, a];
-        sums = nsums;
-        if(stdev(sums) < best.score){ best={score:stdev(sums), g:g.map(t=>t.slice()), sums:[...sums]}; }
-      }
-    }else if(g[i].length){ // העברה בודדת
-      const ai = Math.floor(Math.random()*g[i].length);
-      const a = g[i][ai];
-      const nsums = sums.slice();
-      nsums[i] -= a.rating; nsums[j] += a.rating;
-      if(stdev(nsums) <= stdev(sums)){
-        g[i].splice(ai,1); g[j].push(a);
-        sums = nsums;
-        if(stdev(sums) < best.score){ best={score:stdev(sums), g:g.map(t=>t.slice()), sums:[...sums]}; }
-      }
-    }
-  }
-  return best.g;
-}
-
-function stdev(arr){ const m = arr.reduce((a,b)=>a+b,0)/arr.length; const v = arr.reduce((a,b)=>a+(b-m)**2,0)/arr.length; return Math.sqrt(v); }
-
+/* ----------------- פונקציות עזר ----------------- */
+function avg(arr, sel = (x)=>x){ if(!arr?.length) return 0; return arr.reduce((a,x)=>a+(sel(x)||0),0)/arr.length; }
 function sortByRatingDesc(a){ return [...a].sort((x,y)=>y.rating-x.rating); }
 function emptyTeams(n){ return Array.from({length:n},()=>[]); }
 function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]];} return a; }
+
+/* חלוקה התחלתית לפי ממוצע: מוודא גודל קבוצות כמעט זהה (הפרש מקס' 1) */
+function balancedByAverage(players, k){
+  const sorted = [...players].sort((a,b)=>b.rating-a.rating);
+  const sizes = desiredSizes(sorted.length, k);
+  const groups = Array.from({length:k}, ()=>[]);
+  // Snake draft לעמידה טובה על הממוצעים והגדלים
+  let dir = 1, i = 0;
+  for(const p of sorted){
+    while(groups[i].length >= sizes[i]) i = nextIndex(i, k, dir);
+    groups[i].push(p);
+    i = nextIndex(i, k, dir);
+    if(i===0 || i===k-1) dir *= -1;
+  }
+  return groups;
+}
+function desiredSizes(n,k){
+  const base = Math.floor(n/k), extra = n%k;
+  return Array.from({length:k},(_,i)=> base + (i<extra?1:0));
+}
+function nextIndex(i,k,dir){ const j = i+dir; return j<0?0:j>=k?k-1:j; }
+
+/* אופטימיזציה: ממזערים את סטיית התקן של הממוצעים, בלי לשבור את גדלי הקבוצות */
+function optimizeByAverage(groups, iters=2000){
+  const k = groups.length;
+  const sizes = groups.map(g => g.length);
+  const g = groups.map(a=>a.slice());
+  let score = stdev(g.map(t=>avg(t,x=>x.rating)));
+
+  for(let t=0;t<iters;t++){
+    const i = Math.floor(Math.random()*k);
+    let j = Math.floor(Math.random()*k); if(j===i) j=(j+1)%k;
+    const ai = Math.floor(Math.random()*g[i].length);
+    const aj = Math.floor(Math.random()*g[j].length);
+    const A = g[i][ai], B = g[j][aj];
+    if(!A || !B) continue;
+
+    // swap
+    g[i][ai] = B; g[j][aj] = A;
+    const newScore = stdev(g.map(t=>avg(t,x=>x.rating)));
+    if(newScore <= score) { score = newScore; }
+    else { // לא שיפר – מחזירים
+      g[i][ai] = A; g[j][aj] = B;
+    }
+  }
+  return g;
+}
+function stdev(arr){ const m = arr.reduce((a,b)=>a+b,0)/arr.length; const v = arr.reduce((a,b)=>a+(b-m)**2,0)/arr.length; return Math.sqrt(v); }
