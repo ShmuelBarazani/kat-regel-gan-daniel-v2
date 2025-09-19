@@ -1,9 +1,9 @@
 // src/lib/storage.js
 import { useEffect, useState } from "react";
-import LOCAL_PLAYERS from "../../data/players.json"; // פֹּלְבֶּק סופי מתוך הריפו
+import LOCAL_PLAYERS from "../../data/players.json"; // פולבק מקומי
 
 const LS = {
-  players: "katregel_players_v8", // גרסה חדשה כדי להתעלם מנתונים ישנים
+  players: "katregel_players_v8",
   cycles:  "katregel_cycles_v3",
   ui:      "katregel_ui_v3",
 };
@@ -27,7 +27,7 @@ export function useStorage() {
         const uLS = safeParse(localStorage.getItem(LS.ui));
         if (uLS) setUi(uLS);
 
-        // דיבאג נוח: בקונסול → debugPlayers()
+        // דיבאג: בקונסול -> debugPlayers()
         window.debugPlayers = () =>
           console.table(list.map(p => ({ name:p.name, pos:p.pos, rating:p.rating, active:p.active })));
       } catch (e) {
@@ -55,7 +55,6 @@ export function useStorage() {
 
 /* ---------- טעינה: public → api → data מקומי ---------- */
 async function loadPlayersTripleFallback() {
-  // 1) public/players.json
   try {
     const r = await fetch("/players.json?ts=" + Date.now(), { cache:"no-store" });
     if (r.ok) {
@@ -68,7 +67,6 @@ async function loadPlayersTripleFallback() {
     console.warn("כשל בטעינת /players.json", e);
   }
 
-  // 2) /api/players (מוגש מ-/data/players.json)
   try {
     const r2 = await fetch("/api/players?ts=" + Date.now(), { cache:"no-store" });
     if (r2.ok) { const mapped = mapPlayers(await r2.json()); console.log("Loaded from /api/players"); return mapped; }
@@ -77,7 +75,6 @@ async function loadPlayersTripleFallback() {
     console.warn("כשל בטעינת /api/players", e);
   }
 
-  // 3) פֹּלְבֶּק אחרון: קובץ data מהריפו (נכנס לבאנדל)
   console.log("Loaded from LOCAL data fallback");
   return mapPlayers(LOCAL_PLAYERS);
 }
@@ -104,6 +101,13 @@ function toPlayer(p = {}) {
 }
 
 /* ---------- עזרים ---------- */
+export function sum(arr, sel = (x) => x) {
+  return (Array.isArray(arr) ? arr : []).reduce((a, x) => a + (sel(x) || 0), 0);
+}
+export function avg(arr, sel = (x) => x) {
+  if (!arr || !arr.length) return 0;
+  return sum(arr, sel) / arr.length;
+}
 function coerceRating(v){
   if (v==null) return NaN;
   if (typeof v==="number") return v;
