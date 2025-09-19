@@ -1,8 +1,7 @@
-// src/lib/storage.js
 import { useEffect, useState } from "react";
 
 const LS = {
-  players: "katregel_players_v7", // גרסה חדשה כדי להתעלם מנתונים ישנים
+  players: "katregel_players_v7",
   cycles:  "katregel_cycles_v3",
   ui:      "katregel_ui_v3",
 };
@@ -26,7 +25,7 @@ export function useStorage() {
         const uLS = safeParse(localStorage.getItem(LS.ui));
         if (uLS) setUi(uLS);
 
-        // דיבאג: כתוב בקונסול debugPlayers()
+        // דיבאג: בקונסול -> debugPlayers()
         window.debugPlayers = () =>
           console.table(mapped.map(p => ({ name:p.name, pos:p.pos, rating:p.rating, active:p.active })));
       } catch (e) {
@@ -52,9 +51,8 @@ export function useStorage() {
   };
 }
 
-/* ---- טוען קודם /players.json ואז נופל ל-/api/players ---- */
+/* 1) public/players.json → 2) /api/players (גיבוי) */
 async function fetchPlayersSmart() {
-  // 1) public/players.json
   try {
     const r = await fetch("/players.json?ts=" + Date.now(), { cache:"no-store" });
     if (r.ok) {
@@ -67,42 +65,34 @@ async function fetchPlayersSmart() {
   } catch (e) {
     console.warn("כשל בטעינת public/players.json", e);
   }
-
-  // 2) גיבוי: api/players (משרת את data/players.json)
   const r2 = await fetch("/api/players?ts=" + Date.now(), { cache:"no-store" });
   if (!r2.ok) throw new Error("api/players לא החזיר נתונים");
   const raw2 = await r2.json();
   return mapPlayers(raw2);
 }
 
-/* ---- מיפוי לשמות השדות אצלך: r / selected / prefer / avoid ---- */
+/* מיפוי לשדות שלך: r / selected / prefer / avoid */
 function mapPlayers(arr) { return (Array.isArray(arr) ? arr : []).map(toPlayer); }
-
 function toPlayer(p = {}) {
   const rating = coerceRating(p.r ?? p.rating ?? p.rate ?? p.score ?? p["ציון"]);
   const name   = (typeof p.name === "string" && p.name.trim()) || p["שם"] || p["player"] || "";
   const posRaw = (typeof p.pos  === "string" && p.pos.trim())  || p["עמדה"] || "MF";
   const pos    = POS.includes(posRaw.toUpperCase()) ? posRaw.toUpperCase() : "MF";
-
-  const mustWith  = Array.isArray(p.prefer)    ? p.prefer    :
-                    Array.isArray(p.mustWith)  ? p.mustWith  : [];
-  const avoidWith = Array.isArray(p.avoid)     ? p.avoid     :
-                    Array.isArray(p.avoidWith) ? p.avoidWith : [];
-
+  const mustWith  = Array.isArray(p.prefer) ? p.prefer : Array.isArray(p.mustWith) ? p.mustWith : [];
+  const avoidWith = Array.isArray(p.avoid)  ? p.avoid  : Array.isArray(p.avoidWith)? p.avoidWith: [];
   return {
     id: String(p.id || crypto.randomUUID()),
     name, pos,
     rating: isFinite(rating) ? clamp(rating, 1, 10) : 6.5,
     active: typeof p.selected === "boolean" ? p.selected
           : typeof p.active   === "boolean" ? p.active : false,
-    mustWith,
-    avoidWith,
+    mustWith, avoidWith,
     goals: Number(p.goals || 0),
     wins:  Number(p.wins  || 0),
   };
 }
 
-/* ---- עזרים ---- */
+/* עזרים */
 function coerceRating(v){ if(v==null) return NaN; if(typeof v==="number") return v;
   if(typeof v==="string"){ const n = parseFloat(v.replace(",",".").trim()); return isFinite(n)?n:NaN; }
   return NaN;
