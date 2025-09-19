@@ -1,16 +1,14 @@
 // src/lib/storage.js
-// שכבת אחסון אחידה: טוען/שומר קובצי שחקנים ומחזורים מ-GitHub (דרך /api/read ו-/api/save),
-// עם נפילה ל-localStorage אם אין חיבור.
+// שכבת אחסון: טעינה ושמירה של players/cycles מ-GitHub (דרך /api/read ו-/api/save)
+// עם נפילה ל-localStorage אם ה-API לא זמין.
 
-// שמות מפתחות ב-localStorage
 const LS_PLAYERS = "krgd_v2_players";
 const LS_CYCLES  = "krgd_v2_cycles";
 
-// נתיבי ברירת מחדל בקבצים ב-GitHub
 const REMOTE_PLAYERS_PATH = "data/players.json";
 const REMOTE_CYCLES_PATH  = "data/cycles.json";
 
-// פונקציית debounce (שיהוי) כדי לא להציף שמירות
+// debounce למניעת שמירות/קריאות תכופות
 export function debounce(fn, ms = 800) {
   let t;
   return (...args) => {
@@ -19,11 +17,10 @@ export function debounce(fn, ms = 800) {
   };
 }
 
-// ---- LOAD ----
+/* -------------------- LOAD -------------------- */
 
-// טעינת שחקנים
 export async function loadPlayers() {
-  // 1) קודם API שמושך ישירות מ-GitHub
+  // 1) לטעון דרך ה-API מה-GitHub
   try {
     const r = await fetch(`/api/read?path=${encodeURIComponent(REMOTE_PLAYERS_PATH)}`, { cache: "no-store" });
     if (r.ok) {
@@ -35,12 +32,12 @@ export async function loadPlayers() {
     }
   } catch {}
 
-  // 2) אם נכשל – ננסה קובץ סטטי אם קיים
+  // 2) אם נכשל – נסה קובץ סטטי (רק אם במקרה נמצא גם ב-public)
   try {
     const r2 = await fetch(`/${REMOTE_PLAYERS_PATH}`, { cache: "no-store" });
     if (r2.ok) {
       const json = await r2.json();
-      return (Array.isArray(json) ? json : []);
+      return Array.isArray(json) ? json : [];
     }
   } catch {}
 
@@ -53,7 +50,6 @@ export async function loadPlayers() {
   return [];
 }
 
-// טעינת מחזורים
 export async function loadCycles() {
   try {
     const r = await fetch(`/api/read?path=${encodeURIComponent(REMOTE_CYCLES_PATH)}`, { cache: "no-store" });
@@ -79,9 +75,9 @@ export async function loadCycles() {
   return [];
 }
 
-// ---- SAVE ----
+/* -------------------- SAVE -------------------- */
 
-// שמירה ל-remote דרך /api/save (נפילה ל-localStorage אם נכשל)
+// ניסיון שמירה מרוחק ל-GitHub דרך פונקציית השרת /api/save
 async function saveRemote(path, content, message) {
   try {
     const r = await fetch("/api/save", {
@@ -97,7 +93,6 @@ async function saveRemote(path, content, message) {
   }
 }
 
-// שמירת שחקנים
 export async function savePlayers(players, commitMessage = "update players.json") {
   const ok = await saveRemote(REMOTE_PLAYERS_PATH, players, commitMessage);
   if (!ok) {
@@ -105,7 +100,6 @@ export async function savePlayers(players, commitMessage = "update players.json"
   }
 }
 
-// שמירת מחזורים
 export async function saveCycles(cycles, commitMessage = "update cycles.json") {
   const ok = await saveRemote(REMOTE_CYCLES_PATH, cycles, commitMessage);
   if (!ok) {
