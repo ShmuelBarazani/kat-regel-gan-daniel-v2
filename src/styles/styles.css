@@ -57,3 +57,45 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:Heebo,system-ui,
 .team-body li .rt{text-align:left}
 .print .print-body{padding:12px}
 .print-list{columns:2;gap:16px}
+/* === UI scale – font up === */
+html { font-size: 18px; } /* היה 14/16 – עכשיו גדול וברור יותר */
+body { line-height: 1.5; }
+
+/* === Toolbar & buttons === */
+.toolbar { display:flex; gap:.75rem; align-items:center; margin: 0 0 1rem; }
+.toolbar-item { display:flex; gap:.5rem; align-items:center; }
+.toolbar .btn.primary { background:#1aa36f; color:#0b1b1f; font-weight:700; }
+.btn { padding:.45rem .9rem; border-radius:12px; border:1px solid #294; background:#0d2a2f; color:#dff; }
+.btn.danger { background:#3a0e12; border-color:#a33; color:#ffd8d8; }
+.input, select { background:#0f2227; color:#daf; border:1px solid #2b4950; border-radius:10px; padding:.35rem .5rem; }
+
+/* === Teams layout === */
+.teams-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap:12px; }
+.team-card { background:#0d1c21; border:1px solid #1f3640; border-radius:16px; padding:.5rem; }
+.team-header { display:flex; justify-content:space-between; font-weight:700; color:#cfe; margin-bottom:.25rem; }
+.team-metrics { opacity:.8; font-weight:500; }
+.team-list { list-style:none; margin:0; padding:0; }
+.team-row { display:grid; grid-template-columns: 1fr auto auto; gap:.5rem; align-items:center;
+  padding:.35rem .5rem; border-radius:10px; background:#0b1519; border:1px solid #17323a; margin:.25rem 0; cursor:grab; }
+.team-row:active { cursor:grabbing; }
+.team-row .cell.name { justify-self:start; font-weight:600; color:#f2ffff; }
+.team-row .cell.pos { opacity:.85; min-width:2.5rem; text-align:center; }
+.team-row .cell.rating { min-width:3.2rem; text-align:center; font-variant-numeric: tabular-nums; }
+
+/* Hide ratings when toggled */
+[data-hide-ratings="true"] .team-row .rating { visibility:hidden; }
+
+/* === Players table === */
+.table-wrapper { overflow:auto; border:1px solid #1f3640; border-radius:14px; }
+.players-table { width:100%; border-collapse:collapse; }
+.players-table th, .players-table td { padding:.5rem .6rem; border-bottom:1px solid #17323a; }
+.players-table th { background:#0f2227; position:sticky; top:0; z-index:1; }
+.nowrap { white-space:nowrap; max-width:420px; overflow:hidden; text-overflow:ellipsis; }
+
+/* === Modal === */
+.modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.5); display:flex; align-items:center; justify-content:center; z-index:999; }
+.modal { width:min(720px, 96vw); background:#0d1c21; border:1px solid #1f3640; border-radius:18px; padding:1rem; color:#e9ffff; }
+.modal h3 { margin:0 0 .75rem; }
+.modal-form { display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap:.75rem; }
+.modal-form .row { display:flex; align-items:center; gap:.5rem; }
+.modal-actions { display:flex; gap:.5rem; justify-content:flex-start; margin-top:.5rem; }
