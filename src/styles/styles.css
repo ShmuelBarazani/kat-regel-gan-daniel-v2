@@ -80,3 +80,25 @@ select{ appearance:none; }
 .players-table{ width:100%; border-collapse:collapse; }
 .players-table th, .players-table td{ padding:.5rem .6rem; border-bottom:1px solid var(--border); }
 .players-table th{ background:#0f2227; position:sticky; top:0; z-index:1; }
+/* הכותרת בעברית – אייקון וכיתוב גדולים */
+.site-title { display:flex; align-items:center; gap:.5rem; font-size: clamp(28px, 3.6vw, 48px); font-weight: 800; }
+.site-title .ball { filter: drop-shadow(0 1px 0 rgba(0,0,0,.3)); }
+
+/* כותרות הקבוצות/טבלאות – לא בולד */
+.team-header { font-weight: 500; }           /* היה 700 */
+.players-table th { font-weight: 500; }       /* לא בולד */
+
+/* גלילה פנימית לרשימת השחקנים + ריווח לכפתור */
+.players-scroll { margin-top: 12px; max-height: 460px; overflow: auto; }
+.players-page .toolbar { margin: 6px 0 10px; }
+/* הכותרת בעברית – אייקון וכיתוב גדולים */
+.site-title { display:flex; align-items:center; gap:.5rem; font-size: clamp(28px, 3.6vw, 48px); font-weight: 800; }
+.site-title .ball { filter: drop-shadow(0 1px 0 rgba(0,0,0,.3)); }
+
+/* כותרות הקבוצות/טבלאות – לא בולד */
+.team-header { font-weight: 500; }           /* היה 700 */
+.players-table th { font-weight: 500; }       /* לא בולד */
+
+/* גלילה פנימית לרשימת השחקנים + ריווח לכפתור */
+.players-scroll { margin-top: 12px; max-height: 460px; overflow: auto; }
+.players-page .toolbar { margin: 6px 0 10px; }
