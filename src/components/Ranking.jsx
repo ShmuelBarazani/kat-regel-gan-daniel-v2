@@ -1,45 +1,47 @@
-import React, { useEffect, useMemo, useState } from "react";
+// src/components/Ranking.jsx
+import React, { useMemo } from "react";
+import { useStorage, sum } from "../lib/storage.js";
 
-const LS_RESULTS = "krgd_v2_results";
-
+/**
+ * מימוש בסיסי: טבלת שחקנים עם סכימת נקודות.
+ * נק' לשער = 1, ניצחון = 3 (ניתן לשנות בהמשך), בונוס שבועי/חודשי לפי מתגים.
+ * כאן יש מקום להרחיב לפי החישוב המדויק שהגדרת בגרסאות קודמות.
+ */
 export default function Ranking(){
-  const [rows,setRows]=useState([]);
+  const { players, bonusWeek, bonusMonth } = useStorage();
 
-  useEffect(()=>{
-    const saved = localStorage.getItem(LS_RESULTS);
-    if(saved) setRows(JSON.parse(saved));
-  },[]);
-
-  // חישוב ניקוד זהה לזה שבמסך תוצאות (לשימוש משני)
-  const aggregate = useMemo(()=>{
-    const parsed = rows.filter(r=>r.a && r.b).map(r=>({a:r.a,b:r.b,ga:+r.ga,gb:+r.gb}));
-    const s={};
-    parsed.forEach(({a,b,ga,gb})=>{
-      s[a]=(s[a]||0)+ga;
-      s[b]=(s[b]||0)+gb;
-      if(ga>gb) s[a]+=3;
-      else if(gb>ga) s[b]+=3;
-      else { s[a]=(s[a]||0)+1; s[b]=(s[b]||0)+1; }
-    });
-    return s;
-  },[rows]);
-
-  const sorted = useMemo(()=> Object.entries(aggregate).sort((a,b)=>b[1]-a[1]) ,[aggregate]);
+  const rows = useMemo(()=>{
+    return players.map(p => ({
+      id:p.id, name:p.name, pos:p.pos,
+      goals: Number(p.goals||0),
+      wins: Number(p.wins||0),
+      points: Number(p.goals||0)*1 + Number(p.wins||0)*3
+        + (bonusWeek?5:0) + (bonusMonth?10:0)
+    })).sort((a,b)=>b.points-a.points);
+  },[players, bonusWeek, bonusMonth]);
 
   return (
-    <div className="grid gap-4">
-      <div className="card">
-        <div className="card-title">טבלת דירוג מצטבר</div>
-        <table className="table text-sm">
-          <thead><tr><th>#</th><th>קבוצה</th><th>נקודות</th></tr></thead>
+    <section className="panel">
+      <div className="panel-header"><h2>דירוג</h2></div>
+      <div className="table-wrap">
+        <table className="tbl">
+          <thead>
+            <tr>
+              <th>שם</th><th>עמדה</th><th>שערים</th><th>ניצחונות</th><th>נקודות</th>
+            </tr>
+          </thead>
           <tbody>
-            {sorted.map(([team,pts],i)=>(
-              <tr key={team}><td>{i+1}</td><td>{team}</td><td>{pts}</td></tr>
+            {rows.map(r=>(
+              <tr key={r.id}>
+                <td>{r.name}</td><td>{r.pos}</td>
+                <td className="center">{r.goals}</td>
+                <td className="center">{r.wins}</td>
+                <td className="center">{r.points}</td>
+              </tr>
             ))}
-            {!sorted.length && <tr><td colSpan={3} className="text-center text-slate-400 py-6">אין נתונים</td></tr>}
           </tbody>
         </table>
       </div>
-    </div>
+    </section>
   );
 }
