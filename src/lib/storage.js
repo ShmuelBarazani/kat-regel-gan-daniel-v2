@@ -69,4 +69,81 @@ export function useStorage() {
     players, setPlayers,
     cycles, setCycles,
     hiddenRatings: ui.hiddenRatings,
-    setHi
+    setHiddenRatings: (v) => setUi((s) => ({ ...s, hiddenRatings: v })),
+    bonusWeek: ui.bonusWeek,
+    bonusMonth: ui.bonusMonth,
+    setBonusWeek: (v) => setUi((s) => ({ ...s, bonusWeek: v })),
+    setBonusMonth: (v) => setUi((s) => ({ ...s, bonusMonth: v })),
+  };
+}
+
+/* ---------------------- טעינה חכמה ---------------------- */
+
+async function fetchPlayersSmart() {
+  try {
+    const r = await fetch(PUBLIC_JSON, { cache: "no-store" });
+    if (r.ok) {
+      const raw = await r.json();
+      const mapped = mapPlayers(raw);
+      if (hasDiverseRatings(mapped)) return mapped;
+    }
+  } catch { /* נמשיך לנפילה */ }
+
+  // נפילה ל-/data/players.json (יובא למעלה)
+  return mapPlayers(DATA_PLAYERS);
+}
+
+/* ---------------------- מיפוי ועזרים ---------------------- */
+
+export const POS = ["GK", "DF", "MF", "FW"];
+
+function mapPlayers(arr) {
+  return (Array.isArray(arr) ? arr : []).map(toPlayer);
+}
+
+function toPlayer(p = {}) {
+  const rating = coerceRating(
+    p.rating ?? p.rate ?? p.score ?? p["ציון"] ?? p["rating"]
+  );
+
+  const name =
+    (typeof p.name === "string" && p.name.trim()) ||
+    p["שם"] || p["player"] || "";
+
+  const pos =
+    (typeof p.pos === "string" && p.pos.toUpperCase()) ||
+    p["עמדה"] || "MF";
+
+  return {
+    id: p.id || crypto.randomUUID(),
+    name,
+    pos: ["GK","DF","MF","FW"].includes(pos) ? pos : "MF",
+    rating: isFinite(rating) ? clamp(rating, 1, 10) : 6.5,
+    active: typeof p.active === "boolean" ? p.active : false, // ברירת מחדל: לא משחק
+    mustWith: Array.isArray(p.mustWith) ? p.mustWith : [],
+    avoidWith: Array.isArray(p.avoidWith) ? p.avoidWith : [],
+    goals: Number(p.goals || 0),
+    wins: Number(p.wins || 0),
+  };
+}
+
+function coerceRating(v) {
+  if (v == null) return NaN;
+  if (typeof v === "number") return v;
+  if (typeof v === "string") {
+    const s = v.replace(",", ".").trim(); // תומך גם "9,5"
+    const n = parseFloat(s);
+    return isFinite(n) ? n : NaN;
+  }
+  return NaN;
+}
+
+function clamp(x, min, max) { return Math.max(min, Math.min(max, x)); }
+
+function hasDiverseRatings(players) {
+  // נחשב כמה ערכי ציון שונים יש; אם לפחות 3 שונים → נחשב “אמיתי”
+  const set = new Set(players.map(p => Number(p.rating || 0).toFixed(1)));
+  return set.size >= 3;
+}
+
+function safeParse(txt) { try { return JSON.parse(txt); } catch { return null; } }
