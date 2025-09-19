@@ -1,0 +1,66 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---------- בסיס עיצוב למסכים ---------- */
+:root{
+  --ink:#e8eefc; --muted:#9fb0cb;
+  --bg:#0b1220; --card:#0f1a2e; --edge:#223147;
+  --good:#27c463; --warn:#ff5c7a; --sky:#38bdf8; --emerald:#34d399;
+}
+
+html,body{background:var(--bg);color:var(--ink);font-family:Heebo,system-ui,-apple-system,Segoe UI,Roboto,Noto Sans Hebrew,Arial,sans-serif}
+.container{max-width:72rem;margin:0 auto}
+
+/* כפתורים קטנים */
+.btn{
+  @apply px-3 py-2 rounded-2xl text-sm border transition;
+  border-color:#334155;
+}
+.btn:hover{background:#0b1527}
+.btn-primary{border-color:#38bdf8;background:rgba(56,189,248,.1)}
+.btn-primary:hover{background:rgba(56,189,248,.2)}
+.btn-danger{border-color:#ef4444;background:rgba(239,68,68,.08)}
+.btn-danger:hover{background:rgba(239,68,68,.15)}
+.btn-success{border-color:#22c55e;background:rgba(34,197,94,.1)}
+.btn-success:hover{background:rgba(34,197,94,.2)}
+.input{ @apply bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm; }
+
+/* טבלאות */
+.table{
+  width:100%;
+  border-collapse:separate;
+  border-spacing:0;
+  overflow:hidden;
+  border-radius:1rem;
+  border:1px solid #1f2a3a;
+  background:#0f1a2e;
+}
+.table th,.table td{padding:.6rem .75rem;border-bottom:1px solid #1f2a3a}
+.table th{color:#9fb0cb;text-align:right;font-weight:600;background:#0d1526}
+
+/* קופסאות/כרטיסים */
+.card{border:1px solid #1f2a3a;background:#0f1a2e;border-radius:1rem;padding:1rem}
+.card-title{font-weight:700;margin-bottom:.5rem}
+
+/* תגים */
+.tag{display:inline-flex;align-items:center;gap:.4rem;padding:.25rem .5rem;border:1px solid #2b3a55;border-radius:999px;font-size:.75rem;color:#b7c7e4}
+.tag.sky{border-color:#38bdf8}
+.tag.good{border-color:#34d399}
+.tag.warn{border-color:#f97316}
+
+/* ---------- הדפסה: A4 נוף, מסגרות שחורות, ללא שכפולים ---------- */
+@media print {
+  body{background:#fff;color:#000}
+  header, footer, nav, .no-print{display:none !important}
+  .print-page{
+    width:100%;
+    border:1px solid #000;
+    page-break-after:always;
+    padding:8mm;
+  }
+}
+@page{
+  size:A4 landscape;
+  margin:10mm;
+}
