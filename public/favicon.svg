@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <defs>
+    <style>
+      .a{fill:#0ea5a3}
+      .b{fill:#10b981}
+      .c{fill:#064e3b}
+      .t{font: 700 20px 'Heebo', Arial, sans-serif; fill:#e8eefc}
+    </style>
+  </defs>
+  <rect width="128" height="128" rx="22" class="a"/>
+  <circle cx="64" cy="48" r="28" class="b"/>
+  <path class="c" d="M64 22a26 26 0 0 0-20 9l10 7 10-5 10 5 10-7A26 26 0 0 0 64 22zm-26 26a26 26 0 0 0 6 17l8-9-3-11-11-3zm52 0-11 3-3 11 8 9a26 26 0 0 0 6-17zM64 76a26 26 0 0 0 20-9l-10-7-10 5-10-5-10 7a26 26 0 0 0 20 9z"/>
+  <text x="64" y="112" text-anchor="middle" class="t">גן דניאל</text>
+</svg>
