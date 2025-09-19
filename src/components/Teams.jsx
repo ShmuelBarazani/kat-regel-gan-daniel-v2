@@ -1,113 +1,137 @@
-import React, { useEffect, useMemo, useState } from "react";
+// src/components/Teams.jsx
+import React, { useMemo, useState } from "react";
+import { useStorage, POS, sum } from "../lib/storage.js";
+import Players from "./Players.jsx";
 
-const LS_PLAYERS = "krgd_v2_players";
-const LS_TEAMS   = "krgd_v2_teams";
-const DEFAULT_TEAMS = ["אדום","כחול","ירוק","צהוב"];
+export default function Teams({ mode = "build" }) {
+  const { players, hiddenRatings, cycles, setCycles } = useStorage();
+  const [numTeams, setNumTeams] = useState(4);
+  const [teams, setTeams] = useState(() => makeEmpty(numTeams));
+  const actives = useMemo(() => players.filter(p => p.active), [players]);
 
-export default function Teams(){
-  const [players,setPlayers]=useState([]);
-  const [teams,setTeams]=useState({});
+  // בנה קבוצות אוטומטיות
+  function build() {
+    if (!actives.length) { alert("אין שחקנים מסומנים למשחק"); return; }
+    const buckets = makeEmpty(numTeams);
+    // פזר GK
+    const gk = actives.filter(p => p.pos === "GK").sort((a,b)=>b.rating-a.rating);
+    gk.forEach(p => place(p, buckets));
+    // פזר שאר
+    const rest = actives.filter(p => p.pos !== "GK").sort((a,b)=>b.rating-a.rating);
+    rest.forEach(p => place(p, buckets));
+    setTeams(buckets);
+  }
 
-  useEffect(()=>{
-    const ps = localStorage.getItem(LS_PLAYERS);
-    if(ps) setPlayers(JSON.parse(ps));
-    const ts = localStorage.getItem(LS_TEAMS);
-    if(ts) setTeams(JSON.parse(ts));
-    else{
-      const init = Object.fromEntries(DEFAULT_TEAMS.map(n=>[n,[]]));
-      setTeams(init);
-    }
-  },[]);
-  useEffect(()=>{
-    localStorage.setItem(LS_TEAMS, JSON.stringify(teams));
-  },[teams]);
-
-  const unassigned = useMemo(()=>{
-    const taken = new Set(Object.values(teams).flat().map(x=>x.id));
-    return players.filter(p=>!taken.has(p.id));
-  },[players,teams]);
-
-  const addToTeam=(teamId,playerId)=>{
-    const p = players.find(x=>x.id===playerId);
-    if(!p) return;
-    setTeams(t=>({...t,[teamId]:[...t[teamId], p]}));
-  };
-  const removeFromTeam=(teamId,playerId)=>{
-    setTeams(t=>({...t,[teamId]: t[teamId].filter(x=>x.id!==playerId)}));
-  };
-
-  const totals = (arr)=>({
-    count: arr.length,
-    rating: arr.reduce((s,x)=>s+x.rating,0).toFixed(1)
-  });
-
-  const saveCycle=()=>{
-    const time = new Date().toISOString();
-    const cycles = JSON.parse(localStorage.getItem("krgd_v2_cycles")||"[]");
-    cycles.push({id:crypto.randomUUID(), time, teams});
-    localStorage.setItem("krgd_v2_cycles", JSON.stringify(cycles));
+  // שמירת מחזור
+  function saveCycle() {
+    const stamp = new Date().toISOString().slice(0,19).replace("T"," ");
+    const payload = { id: crypto.randomUUID(), at: stamp, teams };
+    setCycles(prev => [payload, ...prev]);
     alert("המחזור נשמר");
-  };
+  }
+
+  // DnD
+  function onDragStart(e, playerId, fromIdx) {
+    e.dataTransfer.setData("playerId", playerId);
+    e.dataTransfer.setData("fromIdx", String(fromIdx));
+  }
+  function onDrop(e, toIdx) {
+    const playerId = e.dataTransfer.getData("playerId");
+    const fromIdx = Number(e.dataTransfer.getData("fromIdx"));
+    if (!playerId || Number.isNaN(fromIdx)) return;
+
+    setTeams(prev => {
+      const next = prev.map(t => ({ ...t, players: [...t.players] }));
+      const from = next[fromIdx];
+      const to = next[toIdx];
+      const i = from.players.findIndex(p => p.id === playerId);
+      if (i === -1) return prev;
+      const [p] = from.players.splice(i,1);
+      to.players.push(p);
+      from.sum = sum(from.players, x=>x.rating);
+      to.sum = sum(to.players, x=>x.rating);
+      return next;
+    });
+  }
+
+  // איפוס
+  function clearTeams(){ setTeams(makeEmpty(numTeams)); }
+
+  const totals = useMemo(() => actives.length, [actives]);
 
   return (
-    <div className="grid gap-4">
-      <div className="card">
-        <div className="card-title">שחקנים פנויים</div>
-        <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
-          {unassigned.map(p=>(
-            <div key={p.id} className="flex items-center justify-between px-3 py-2 border border-slate-700 rounded-xl">
-              <div className="text-sm">{p.name} · <span className="text-slate-400">{p.pos}</span> · {p.rating}</div>
-              <select className="input"
-                      onChange={e=>{ if(e.target.value){ addToTeam(e.target.value,p.id); e.target.value=""; } }}>
-                <option value="">הוסף לקבוצה…</option>
-                {Object.keys(teams).map(t=> <option key={t} value={t}>{t}</option>)}
-              </select>
-            </div>
-          ))}
-          {!unassigned.length && <div className="text-slate-400 text-sm">אין שחקנים פנויים</div>}
+    <div className="panel">
+      <div className="panel-header">
+        <h2>קבוצות למחזור</h2>
+        <div className="actions">
+          <label className="inline">
+            <span>מס' קבוצות:</span>
+            <select className="inp small" value={numTeams} onChange={e => { setNumTeams(Number(e.target.value)); clearTeams(); }}>
+              {[2,3,4,5,6,7,8].map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </label>
+          <button className="btn accent" onClick={build}>עשה מחזור</button>
+          <button className="btn" onClick={saveCycle}>שמור מחזור</button>
+          <span className="muted">מסומנים למשחק: {totals}</span>
         </div>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-4">
-        {Object.entries(teams).map(([teamName,list])=>{
-          const t=totals(list);
-          return (
-            <div key={teamName} className="card">
-              <div className="flex items-center justify-between mb-2">
-                <div className="card-title">{teamName}</div>
-                <div className="flex gap-2">
-                  <span className="tag sky">שחקנים: {t.count}</span>
-                  <span className="tag good">סך דירוג: {t.rating}</span>
-                </div>
+      {/* קבוצות מעל הטבלה */}
+      <div className="teams-grid">
+        {teams.map((t, idx) => (
+          <div key={idx}
+               className="team-card"
+               onDragOver={(e)=>e.preventDefault()}
+               onDrop={(e)=>onDrop(e, idx)}
+          >
+            <div className="team-head">
+              <div className="team-title">קבוצה {idx+1}</div>
+              <div className="team-meta">
+                סה״כ {t.sum.toFixed(2)} | ממוצע {(t.players.length? (t.sum/t.players.length):0).toFixed(2)}
               </div>
-              <table className="table text-sm">
-                <thead><tr><th>שם</th><th>תפקיד</th><th>דירוג</th><th className="text-left">פעולה</th></tr></thead>
-                <tbody>
-                  {list.map(p=>(
-                    <tr key={p.id}>
-                      <td>{p.name}</td><td>{p.pos}</td><td>{p.rating}</td>
-                      <td className="text-left">
-                        <button className="btn btn-danger" onClick={()=>removeFromTeam(teamName,p.id)}>הסר</button>
-                      </td>
-                    </tr>
-                  ))}
-                  {!list.length && <tr><td colSpan={4} className="text-center text-slate-400 py-6">אין שחקנים בקבוצה</td></tr>}
-                </tbody>
-              </table>
             </div>
-          )
-        })}
+            <div className="team-body">
+              <ul>
+                {t.players.map(p => (
+                  <li key={p.id} draggable
+                      onDragStart={(e)=>onDragStart(e, p.id, idx)}
+                      title="גרור לשינוי קבוצה">
+                    <span className="pos">{p.pos}</span>
+                    <span className="nm">{p.name}</span>
+                    <span className="rt">{hiddenRatings ? "—" : Number(p.rating).toFixed(1)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        ))}
       </div>
 
-      <div className="flex gap-2">
-        <button className="btn btn-success" onClick={saveCycle}>שמירת מחזור</button>
-        <button className="btn" onClick={()=>{
-          if(confirm("לאפס חלוקת שחקנים בין הקבוצות?")) {
-            const reset = Object.fromEntries(Object.keys(teams).map(n=>[n,[]]));
-            setTeams(reset);
-          }
-        }}>איפוס חלוקה</button>
-      </div>
+      {/* טבלת השחקנים למטה */}
+      <Players />
     </div>
   );
+}
+
+// אלגוריתם הנחתה פשוט עם עדיפויות: סכום נמוך, יעד עמדות, פיזור
+function place(p, buckets) {
+  let best = 0, bestScore = Infinity;
+  for (let i=0;i<buckets.length;i++){
+    const t = buckets[i];
+    const score = t.sum + (t.posCounts[p.pos]||0)*2; // קנס קל על עומס בעמדה
+    if (score < bestScore){ bestScore = score; best = i; }
+  }
+  const t = buckets[best];
+  t.players.push(p);
+  t.sum += p.rating || 0;
+  t.posCounts[p.pos] = (t.posCounts[p.pos]||0)+1;
+}
+
+function makeEmpty(n){
+  return Array.from({length:n}, (_,i)=>({
+    name:`קבוצה ${i+1}`,
+    players:[],
+    sum:0,
+    posCounts:{}
+  }));
 }
