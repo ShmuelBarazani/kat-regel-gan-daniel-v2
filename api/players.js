@@ -1,8 +1,7 @@
-// api/players.js  (CommonJS – עובד תמיד ב-Vercel)
-// מחזיר את /data/players.json כ-JSON
-const data = require("../data/players.json");
+// api/players.js  — גרסת ESM עבור Vercel + Vite ("type": "module")
+import data from "../data/players.json" assert { type: "json" };
 
-module.exports = (req, res) => {
+export default function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   res.status(200).json(data);
-};
+}
