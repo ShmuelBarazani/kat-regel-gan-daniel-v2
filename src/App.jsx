@@ -1,76 +1,82 @@
 // src/App.jsx
-import React, { useMemo, useState } from "react";
-import Players from "./components/Players.jsx";
+import React, { useState } from "react";
 import Teams from "./components/Teams.jsx";
+import Players from "./components/Players.jsx";
 import Ranking from "./components/Ranking.jsx";
 import MatchdayResults from "./components/MatchdayResults.jsx";
 import Leaderboards from "./components/Leaderboards.jsx";
 import SavedCycles from "./components/SavedCycles.jsx";
 import PrintView from "./components/PrintView.jsx";
 import BonusToggle from "./components/BonusToggle.jsx";
-import { useStorage } from "./lib/storage.js";
-import "./styles/styles.css";
 
-const TABS = [
-  { key: "teams", label: "עשה מחזור" },       // קבוצות מעל הטבלה
-  { key: "setcycle", label: "קבע מחזור" },
-  { key: "players", label: "שחקנים" },
-  { key: "ranking", label: "דירוג" },
-  { key: "results", label: "תוצאות" },
-  { key: "leader", label: "טבלאות" },
-  { key: "saved", label: "מחזורים שמורים" },
-  { key: "print", label: "תצוגת הדפסה" },
-];
+function NavButton({ active, onClick, children }) {
+  return (
+    <button
+      className={`nav-btn ${active ? "active" : ""}`}
+      onClick={onClick}
+      type="button"
+    >
+      {children}
+    </button>
+  );
+}
 
 export default function App() {
-  const [tab, setTab] = useState("teams");
-  const { hiddenRatings, setHiddenRatings } = useStorage();
-
-  const header = useMemo(() => (
-    <div className="topbar" dir="rtl">
-      <div className="brand">
-        <span className="logo" aria-hidden>⚽</span>
-        קטרגל – גן דניאל
-      </div>
-
-      <div className="tabs">
-        {TABS.map(t => (
-          <button
-            key={t.key}
-            className={"tab" + (tab === t.key ? " active" : "")}
-            onClick={() => setTab(t.key)}
-            type="button"
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      <div className="actions">
-        <button
-          type="button"
-          className={"pill" + (hiddenRatings ? " warn" : "")}
-          onClick={() => setHiddenRatings(!hiddenRatings)}
-          title="הסתר/הצג ציונים"
-        >
-          {hiddenRatings ? "הצג ציונים" : "הסתר ציונים"}
-        </button>
-        <BonusToggle />
-      </div>
-    </div>
-  ), [tab, hiddenRatings, setHiddenRatings]);
+  // כרטיסיות ניווט – בלי "עשה/קבע מחזור" ובלי בונוסים בראש
+  const [tab, setTab] = useState("teams"); // teams | players | ranking | results | leaders | saved | print
 
   return (
-    <div className="app" dir="rtl">
-      {header}
-      {tab === "teams" && <Teams />}
-      {tab === "setcycle" && <Teams mode="set" />}
-      {tab === "players" && <Players />}
-      {tab === "ranking" && <Ranking />}
-      {tab === "results" && <MatchdayResults />}
-      {tab === "leader" && <Leaderboards />}
-      {tab === "saved" && <SavedCycles onOpen={() => setTab("teams")} />}
-      {tab === "print" && <PrintView />}
+    <div dir="rtl" className="app-root">
+      {/* כותרת ראשית – נגדיל רק אותה (ראה styles.css: .site-title) */}
+      <header className="app-header">
+        <h1 className="site-title">KAT REGEL — GAN DANIEL V2</h1>
+
+        {/* ניווט ראשי בלבד */}
+        <nav className="nav">
+          <NavButton active={tab === "teams"} onClick={() => setTab("teams")}>
+            קבוצות
+          </NavButton>
+          <NavButton active={tab === "players"} onClick={() => setTab("players")}>
+            שחקנים
+          </NavButton>
+          <NavButton active={tab === "ranking"} onClick={() => setTab("ranking")}>
+            דירוג
+          </NavButton>
+          <NavButton active={tab === "results"} onClick={() => setTab("results")}>
+            תוצאות
+          </NavButton>
+          <NavButton active={tab === "leaders"} onClick={() => setTab("leaders")}>
+            מצטיינים
+          </NavButton>
+          <NavButton active={tab === "saved"} onClick={() => setTab("saved")}>
+            מחזורים שמורים
+          </NavButton>
+          <NavButton active={tab === "print"} onClick={() => setTab("print")}>
+            תצוגת הדפסה
+          </NavButton>
+        </nav>
+
+        {/* שורה זו בכוונה ריקה – כאן בעבר הופיעו "עשה/קבע מחזור" והבונוסים.
+            השארנו ריק כדי לא להציג אותם בראש הדף. */}
+      </header>
+
+      {/* בונוסים – מוצגים רק במסכי "שחקנים" ו-"דירוג" לפי דרישתך */}
+      {(tab === "players" || tab === "ranking") && (
+        <div className="bonus-strip">
+          <BonusToggle />
+        </div>
+      )}
+
+      {/* אזור התוכן */}
+      <main className="page">
+        {tab === "teams" && <Teams />}
+        {tab === "players" && <Players />}
+        {tab === "ranking" && <Ranking />}
+        {tab === "results" && <MatchdayResults />}
+        {tab === "leaders" && <Leaderboards />}
+        {tab === "saved" && <SavedCycles />}
+        {tab === "print" && <PrintView />}
+      </main>
     </div>
   );
 }
