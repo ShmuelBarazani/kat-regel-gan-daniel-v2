@@ -1,192 +1,175 @@
 // src/components/Players.jsx
+
 import React, { useEffect, useMemo, useState } from "react";
 import { getPlayers, setPlayers, countActive } from "../lib/storage";
 
-const POS = ["GK", "DF", "MF", "FW"];
+const POS_OPTIONS = [
+  { v: "GK", t: "שוער" },
+  { v: "DF", t: "הגנה" },
+  { v: "MF", t: "קישור" },
+  { v: "FW", t: "התקפה" },
+];
 
 export default function Players() {
-  const [players, setLocal] = useState([]);
+  const [players, setPlayersState] = useState([]);
+  const [filter, setFilter] = useState("");
 
-  // טען מלוקאל־סטוראז' או מקובץ public/players.json
+  // טעינה ראשונה + זריעת ברירת מחדל תיעשה ע"י storage.getPlayers()
   useEffect(() => {
-    const fromStore = getPlayers(null);
-    if (fromStore) {
-      setLocal(fromStore);
-    } else {
-      fetch("/players.json?ts=" + Date.now())
-        .then(r => r.json())
-        .then(list => {
-          // ודא שדות מינימום
-          const norm = list.map(p => ({
-            id: p.id ?? crypto.randomUUID(),
-            name: p.name ?? "",
-            pos: p.pos ?? "MF",
-            r: Number(p.r ?? 6.5),
-            play: !!p.selected,      // selected => play
-            prefer: p.prefer ?? [],
-            avoid: p.avoid ?? [],
-          }));
-          setLocal(norm);
-          setPlayers(norm);
-        })
-        .catch(() => setLocal([]));
+    try {
+      const list = getPlayers();
+      setPlayersState(Array.isArray(list) ? list : []);
+    } catch {
+      setPlayersState([]);
     }
   }, []);
 
-  // שמירה אוטומטית
-  useEffect(() => { setPlayers(players); }, [players]);
+  // שמירה ל-storage בכל שינוי
+  useEffect(() => {
+    setPlayers(players);
+  }, [players]);
 
-  const activeCount = useMemo(() => countActive(players), [players]);
+  const addPlayer = () => {
+    const next = [
+      ...players,
+      { name: "", pos: "MF", rating: 6, mustWith: [], avoidWith: [], active: true },
+    ];
+    setPlayersState(next);
+  };
 
-  const update = (id, patch) =>
-    setLocal(prev => prev.map(p => (p.id === id ? { ...p, ...patch } : p)));
+  const update = (idx, patch) => {
+    const next = players.map((p, i) => (i === idx ? { ...p, ...patch } : p));
+    setPlayersState(next);
+  };
 
-  const remove = (id) =>
-    setLocal(prev => prev.filter(p => p.id !== id));
+  const remove = (idx) => {
+    const next = players.filter((_, i) => i !== idx);
+    setPlayersState(next);
+  };
 
-  const addPlayer = () =>
-    setLocal(prev => [
-      {
-        id: crypto.randomUUID(),
-        name: "",
-        pos: "MF",
-        r: 6.5,
-        play: false,
-        prefer: [],
-        avoid: [],
-      },
-      ...prev,
-    ]);
+  const filtered = useMemo(() => {
+    const q = (filter || "").trim();
+    if (!q) return players;
+    return players.filter((p) => (p?.name || "").includes(q));
+  }, [players, filter]);
+
+  const activeCount = countActive(players);
 
   return (
-    <section className="page players" dir="rtl">
-      <div className="toolbar">
-        <h1 className="page-title">קטרגל גן-דניאל ⚽</h1>
-        <div className="spacer" />
-        <button className="btn add" onClick={addPlayer}>הוסף שחקן</button>
-      </div>
+    <div style={{ direction: "rtl", maxWidth: 1100, margin: "20px auto", padding: "0 12px", color: "#E8EEFC" }}>
+      <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+        <div style={{ fontSize: 18 }}>
+          <b>שחקנים</b> &nbsp;—&nbsp; פעילים: {activeCount} / {players.length}
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input
+            placeholder="חפש לפי שם…"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #24324a", background: "#0f1a2e", color: "#E8EEFC" }}
+          />
+          <button onClick={addPlayer} style={{ padding: "8px 12px", borderRadius: 8, background: "#27c463", border: "none", color: "#0b1220", fontWeight: 600 }}>
+            הוסף שחקן
+          </button>
+        </div>
+      </header>
 
-      <div className="subbar">
-        <span>מסומנים למשחק: <b>{activeCount}</b> / {players.length}</span>
-      </div>
-
-      <div className="table-wrapper players-scroll">
-        <table className="table players-table">
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 800 }}>
           <thead>
-            <tr>
-              <th style={{width: 72}}>משחק?</th>
-              <th style={{minWidth: 240}}>שם</th>
-              <th style={{width: 120}}>עמדה</th>
-              <th style={{width: 120}}>ציון</th>
-              <th>חייב עם</th>
-              <th>לא עם</th>
-              <th style={{width: 100}}>פעולות</th>
+            <tr style={{ background: "#0f1a2e" }}>
+              <th style={th}>פעולות</th>
+              <th style={th}>לא עם</th>
+              <th style={th}>חייב עם</th>
+              <th style={th}>ציון</th>
+              <th style={th}>עמדה</th>
+              <th style={th}>שם</th>
+              <th style={th}>משחק?</th>
             </tr>
           </thead>
           <tbody>
-            {players.map(p => (
-              <tr key={p.id}>
-                {/* משחק? ראשונה */}
-                <td className="center">
+            {filtered.map((p, idx) => (
+              <tr key={idx} style={{ borderTop: "1px solid #24324a" }}>
+                <td style={td}>
+                  <button onClick={() => remove(idx)} style={btnDanger}>מחק</button>
+                </td>
+                <td style={td}>
                   <input
-                    type="checkbox"
-                    checked={!!p.play}
-                    onChange={e => update(p.id, { play: e.target.checked })}
+                    value={(p.avoidWith || []).join(", ")}
+                    onChange={(e) => update(idx, { avoidWith: splitList(e.target.value) })}
+                    style={inp}
+                    placeholder="שמות מופרדים בפסיק"
                   />
                 </td>
-
-                {/* שם */}
-                <td>
+                <td style={td}>
                   <input
-                    className="input"
-                    value={p.name}
-                    onChange={e => update(p.id, { name: e.target.value })}
-                    placeholder="שם שחקן"
+                    value={(p.mustWith || []).join(", ")}
+                    onChange={(e) => update(idx, { mustWith: splitList(e.target.value) })}
+                    style={inp}
+                    placeholder="שמות מופרדים בפסיק"
                   />
                 </td>
-
-                {/* עמדה */}
-                <td>
+                <td style={td}>
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="1"
+                    max="10"
+                    value={p.rating ?? 6}
+                    onChange={(e) => update(idx, { rating: Number(e.target.value) })}
+                    style={{ ...inp, width: 80 }}
+                  />
+                </td>
+                <td style={td}>
                   <select
-                    className="select"
-                    value={p.pos}
-                    onChange={e => update(p.id, { pos: e.target.value })}
+                    value={p.pos || "MF"}
+                    onChange={(e) => update(idx, { pos: e.target.value })}
+                    style={{ ...inp, width: 120 }}
                   >
-                    {POS.map(x => <option key={x} value={x}>{x}</option>)}
+                    {POS_OPTIONS.map(o => (
+                      <option key={o.v} value={o.v}>{o.t}</option>
+                    ))}
                   </select>
                 </td>
-
-                {/* ציון */}
-                <td>
+                <td style={td}>
                   <input
-                    className="input center"
-                    type="number" step="0.5" min="1" max="10"
-                    value={p.r}
-                    onChange={e => update(p.id, { r: Number(e.target.value) })}
+                    value={p.name || ""}
+                    onChange={(e) => update(idx, { name: e.target.value })}
+                    style={inp}
+                    placeholder="שם השחקן"
                   />
                 </td>
-
-                {/* חייב עם / לא עם – שבבי תצוגה + עריכה בלחיצה */}
-                <td className="chips-cell">
-                  <Chips editable list={p.prefer} all={players} onChange={(list) => update(p.id, { prefer: list })} />
-                </td>
-                <td className="chips-cell">
-                  <Chips editable list={p.avoid} all={players} onChange={(list) => update(p.id, { avoid: list })} />
-                </td>
-
-                <td className="center">
-                  <button className="btn danger" onClick={() => remove(p.id)}>מחיקה</button>
+                <td style={td}>
+                  <input
+                    type="checkbox"
+                    checked={p.active !== false}
+                    onChange={(e) => update(idx, { active: e.target.checked })}
+                  />
                 </td>
               </tr>
             ))}
+            {filtered.length === 0 && (
+              <tr>
+                <td colSpan={7} style={{ ...td, textAlign: "center", color: "#9fb0cb" }}>
+                  אין שחקנים תואמים. נסה לאפס את החיפוש או להוסיף שחקן חדש.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
-    </section>
+    </div>
   );
 }
 
-/** בחירה קומפקטית לשדות "חייב עם / לא עם" */
-function Chips({ list, all, editable, onChange }) {
-  const [open, setOpen] = useState(false);
-  const names = new Map(all.map(p => [p.id, p.name]));
-  const ids = new Map(all.map(p => [p.name, p.id])); // תמיכה בשמות ישנים
+const th = { textAlign: "right", padding: "10px 8px", borderBottom: "1px solid #24324a", fontWeight: 600 };
+const td = { textAlign: "right", padding: "8px" };
+const inp = { padding: "6px 10px", borderRadius: 8, border: "1px solid #24324a", background: "#0f1a2e", color: "#E8EEFC", width: "100%" };
+const btnDanger = { padding: "6px 10px", borderRadius: 8, border: "1px solid #ff5c7a", background: "transparent", color: "#ff5c7a", cursor: "pointer" };
 
-  const normalized = (list ?? []).map(x => (ids.get(x) || x));
-
-  const toggle = (id) => {
-    const exists = normalized.includes(id);
-    const next = exists ? normalized.filter(x => x !== id) : [...normalized, id];
-    onChange?.(next);
-  };
-
-  return (
-    <div className="chips">
-      {(normalized.length ? normalized : []).map(id => (
-        <span key={id} className="chip">{names.get(id) ?? id}</span>
-      ))}
-      {editable && (
-        <button className="btn tiny" onClick={() => setOpen(v => !v)}>ערוך</button>
-      )}
-      {open && (
-        <div className="picker">
-          <div className="picker-list">
-            {all.map(p => (
-              <label key={p.id} className="pick-row">
-                <input
-                  type="checkbox"
-                  checked={normalized.includes(p.id)}
-                  onChange={() => toggle(p.id)}
-                />
-                <span>{p.name}</span>
-              </label>
-            ))}
-          </div>
-          <div className="picker-actions">
-            <button className="btn" onClick={() => setOpen(false)}>סגור</button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+function splitList(s) {
+  return (s || "")
+    .split(",")
+    .map(x => x.trim())
+    .filter(Boolean);
 }
