@@ -18,8 +18,7 @@ export default function Teams() {
     try {
       const raw = localStorage.getItem(TEAMS_LS);
       if (!raw) return;
-      const saved = JSON.parse(raw); // { teamCount, groups: [[id,id,...], ...] }
-
+      const saved = JSON.parse(raw);                   // { teamCount, groups }
       const idMap = new Map(players.map(p => [String(p.id), p]));
       const restored = (saved?.groups || []).map(g =>
         (Array.isArray(g) ? g : []).map(id => idMap.get(String(id))).filter(Boolean)
@@ -31,26 +30,23 @@ export default function Teams() {
     } catch {}
   }, [players]);
 
-  /** שמירה בכל שינוי */
+  /** שמירה – רק אם יש לפחות שחקן אחד באחת הקבוצות (לא לשמור ריק ולדרוס שמירה ישנה) */
   useEffect(() => {
     if (!teams.length) return;
-    const payload = {
-      teamCount: teams.length,
-      groups: teams.map(g => g.map(p => String(p.id))),
-    };
+    if (teams.every(t => t.length === 0)) return;      // מונע כתיבה של [[]...]
+    const payload = { teamCount: teams.length, groups: teams.map(g => g.map(p => String(p.id))) };
     localStorage.setItem(TEAMS_LS, JSON.stringify(payload));
   }, [teams]);
 
   /** יצירה מאוזנת לפי ממוצע */
   const makeBalancedTeams = useCallback(() => {
     let g = balancedByAverage(activePlayers, teamCount);
-    g = optimizeByAverage(g, 2000);
-    setTeams(g.map(sortByRatingDesc));
-    // נשמר גם ברגע הלחיצה (בנוסף ל-useEffect)
-    setTimeout(() => {
-      const payload = { teamCount, groups: g.map(t => t.map(p => String(p.id))) };
-      localStorage.setItem(TEAMS_LS, JSON.stringify(payload));
-    }, 0);
+    g = optimizeByAverage(g, 1600);
+    g = g.map(sortByRatingDesc);
+    setTeams(g);
+    // נשמור מיידית
+    const payload = { teamCount, groups: g.map(t => t.map(p => String(p.id))) };
+    localStorage.setItem(TEAMS_LS, JSON.stringify(payload));
   }, [activePlayers, teamCount]);
 
   const saveTeamsAsCycle = () => {
@@ -129,7 +125,7 @@ export default function Teams() {
 
   return (
     <div className="teams-page container" dir="rtl">
-      {/* טול־בר */}
+      {/* טול־בר מיושר */}
       <div className="toolbar">
         <button className="btn primary" onClick={makeBalancedTeams}>עשה כוחות</button>
         <button className="btn" onClick={saveTeamsAsCycle}>קבע כוחות</button>
@@ -141,7 +137,7 @@ export default function Teams() {
             onChange={(e) => {
               const n = Number(e.target.value || 4);
               setTeamCount(n);
-              setTeams(emptyTeams(n));
+              setTeams(emptyTeams(n)); // לא ישמר כי הגארד חוסם שמירת ריק
             }}
           >
             {[2,3,4,5,6].map(n => <option key={n} value={n}>{n}</option>)}
@@ -191,7 +187,7 @@ function balancedByAverage(players, k){
   }
   return groups;
 }
-function optimizeByAverage(groups, iters=2000){
+function optimizeByAverage(groups, iters=1600){
   const k = groups.length;
   const g = groups.map(a=>a.slice());
   let score = stdev(g.map(t=>avg(t,x=>x.rating)));
