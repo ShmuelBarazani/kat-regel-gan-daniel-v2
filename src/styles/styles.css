@@ -158,3 +158,39 @@ table{width:100%; border-collapse:separate; border-spacing:0}
 .modal .row-col{display:flex; flex-direction:column; gap:6px; grid-column: span 1}
 .modal .multi{min-width:190px; background:#0f2227; color:#cfe2ff; border:1px solid var(--border); border-radius:8px}
 .modal-backdrop{z-index:10000}
+/* טול־בר – יישור וגובה אחיד */
+.toolbar, .players-toolbar{
+  display:flex; flex-wrap:wrap; align-items:center; gap:10px;
+  margin:12px 0 14px; justify-content:flex-start;
+}
+.toolbar > *{margin:0}
+.toolbar .btn, .toolbar select, .toolbar label{
+  height:36px; display:inline-flex; align-items:center; gap:6px;
+}
+
+/* טבלת שחקנים – גלילה פנימית וכותרות דביקות */
+.table-scroll{
+  max-height:56vh; overflow:auto; background:var(--panel);
+  border:1px solid var(--border); border-radius:14px; padding:6px;
+}
+.players-table thead th{
+  position:sticky; top:0; z-index:2;
+  background:var(--panel); border-bottom:1px solid var(--border);
+  padding:10px 8px; text-align:center;
+}
+.players-table tbody td{padding:8px 6px; text-align:center; vertical-align:middle}
+
+/* צ'יפים */
+.chips{display:flex; gap:6px; flex-wrap:wrap; align-items:center}
+.chip{background:#10303a; color:#cfe2ff; border:1px solid var(--border); border-radius:999px; padding:2px 8px; font-size:.85rem}
+.chip-empty{opacity:.6}
+.btn.small{padding:.25rem .55rem; font-size:.85rem}
+.cell-btn{margin-inline-start:6px}
+
+/* מודאל קומפקטי */
+.modal-compact{width:min(600px,96vw)}
+.grid.gap-compact{display:grid; gap:10px; grid-template-columns: repeat(2, 1fr)}
+.col-span-2{grid-column:1 / -1}
+.row-compact{display:flex; align-items:center; gap:8px}
+.multi.compact{min-width:180px; background:#0f2227; color:#cfe2ff; border:1px solid var(--border); border-radius:8px}
+.modal-backdrop{z-index:10000}
