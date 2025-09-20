@@ -1,124 +1,136 @@
 // src/lib/storage.js
-// עטיפת LocalStorage + כל הפונקציות שהמסכים מייבאים,
-// עם named exports וגם default export כדי למנוע בעיות זיהוי.
 
-// --- Keys ---
-export const STORAGE_KEYS = {
-  PLAYERS: "players_v2",
-  TEAM_COUNT: "team_count_v2",
-  LAST_TEAMS: "katregel_last_teams_v2",
-  ROUNDS: "rounds_v2",
+// ===== Storage helpers =====
+const STORAGE_KEYS = {
+  players: "katregal:players",
+  teams: "katregal:teams",
+  teamsHistory: "katregal:teams:snapshots",
+  teamCount: "katregal:teamCount",
 };
 
-// --- LS helpers ---
-function hasLS() {
-  return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
+// LocalStorage-safe (גם ב-SSR/Build)
+function ls() {
+  if (typeof window === "undefined") {
+    // נפעל כסוג של no-op בזמן build/SSR
+    const mem = new Map();
+    return {
+      getItem: (k) => mem.get(k) ?? null,
+      setItem: (k, v) => mem.set(k, v),
+      removeItem: (k) => mem.delete(k),
+    };
+  }
+  return window.localStorage;
 }
 
-export function loadJSON(key, fallback = null) {
-  if (!hasLS()) return fallback;
+function readJSON(key, fallback) {
   try {
-    const raw = window.localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : fallback;
+    const raw = ls().getItem(key);
+    if (!raw) return fallback;
+    return JSON.parse(raw);
   } catch {
     return fallback;
   }
 }
 
-export function saveJSON(key, value) {
-  if (!hasLS()) return;
+function writeJSON(key, value) {
   try {
-    window.localStorage.setItem(key, JSON.stringify(value));
+    ls().setItem(key, JSON.stringify(value));
+  } catch {
+    // ignore quota/permission errors
+  }
+}
+
+// ===== Players API =====
+
+/**
+ * מחזיר מערך שחקנים מהאחסון.
+ * מבנה מומלץ לשחקן: { name, pos, rating, active }
+ */
+export function getPlayers() {
+  return readJSON(STORAGE_KEYS.players, []);
+}
+
+/**
+ * שומר מערך שחקנים לאחסון.
+ */
+export function setPlayers(list) {
+  writeJSON(STORAGE_KEYS.players, Array.isArray(list) ? list : []);
+}
+
+/**
+ * מחזיר את מספר השחקנים הפעילים.
+ * אם לא נשלח מערך שחקנים, ייקרא מהאחסון.
+ */
+export function countActive(players) {
+  const arr = Array.isArray(players) ? players : getPlayers();
+  return arr.filter((p) => p && p.active !== false).length;
+}
+
+// ===== Teams count (מספר קבוצות) =====
+
+/**
+ * מחזיר את מספר הקבוצות המוגדר (ברירת מחדל 4).
+ */
+export function getTeamCount() {
+  const n = readJSON(STORAGE_KEYS.teamCount, 4);
+  const num = Number(n);
+  return Number.isFinite(num) && num > 0 ? num : 4;
+}
+
+/**
+ * מעדכן את מספר הקבוצות.
+ */
+export function setTeamCount(n) {
+  const num = Number(n);
+  writeJSON(STORAGE_KEYS.teamCount, Number.isFinite(num) && num > 0 ? num : 4);
+}
+
+// ===== Teams snapshots/history =====
+
+/**
+ * שמירת צילום מצב של הקבוצות (לוג נתונים להיסטוריה).
+ * @param {{teams:any, meta?:any}} snapshot
+ *  דוגמה: { teams:[...], meta:{ createdBy:"...", round: 3 } }
+ */
+export function saveTeamsSnapshot(snapshot) {
+  const history = readJSON(STORAGE_KEYS.teamsHistory, []);
+  const entry = {
+    ...snapshot,
+    _ts: Date.now(),
+  };
+  history.push(entry);
+  // שומרים רק את ה-50 האחרונים כדי לא לנפח אחסון
+  const trimmed = history.slice(-50);
+  writeJSON(STORAGE_KEYS.teamsHistory, trimmed);
+  // שומרים גם "מצב אחרון" נוח לשליפה מהירה
+  writeJSON(STORAGE_KEYS.teams, snapshot?.teams ?? null);
+}
+
+/**
+ * מחזיר את מצב הקבוצות האחרון שנשמר (לא ההיסטוריה כולה).
+ * אם אין שמור, מחזיר null.
+ */
+export function getLastTeams() {
+  return readJSON(STORAGE_KEYS.teams, null);
+}
+
+/**
+ * מחזיר את כל ההיסטוריה של הקבוצות (אופציונלי לשימוש במסך ניהול).
+ */
+export function getTeamsHistory() {
+  return readJSON(STORAGE_KEYS.teamsHistory, []);
+}
+
+/**
+ * מנקה את כל הנתונים השמורים (זהירות!).
+ */
+export function clearAllStorage() {
+  try {
+    ls().removeItem(STORAGE_KEYS.players);
+    ls().removeItem(STORAGE_KEYS.teamCount);
+    ls().removeItem(STORAGE_KEYS.teams);
+    ls().removeItem(STORAGE_KEYS.teamsHistory);
   } catch {
     // ignore
   }
 }
-
-// --- Players ---
-export function getPlayers() {
-  return loadJSON(STORAGE_KEYS.PLAYERS, []);
-}
-
-export function setPlayers(players) {
-  saveJSON(STORAGE_KEYS.PLAYERS, Array.isArray(players) ? players : []);
-}
-
-// תמיכה בשדות שונים ל"משחק?"
-function isPlaying(p) {
-  if (!p || typeof p !== "object") return false;
-  if ("plays" in p) return !!p.plays;
-  if ("play" in p) return !!p.play;
-  if ("isPlaying" in p) return !!p.isPlaying;
-  if (p["משחק"] !== undefined) return !!p["משחק"];
-  return true; // ברירת מחדל היסטורית
-}
-
-export function countActive(players = null) {
-  const list = players ?? getPlayers();
-  return (list || []).filter(isPlaying).length;
-}
-
-// --- Team count ---
-export function getTeamCount() {
-  return loadJSON(STORAGE_KEYS.TEAM_COUNT, 4);
-}
-
-export function setTeamCount(n) {
-  const safe = Number.isFinite(+n) && +n > 0 ? +n : 4;
-  saveJSON(STORAGE_KEYS.TEAM_COUNT, safe);
-}
-
-// --- snapshot teams (למסך מנהל/תוצאות) ---
-export function saveTeamsSnapshot(groups) {
-  const snapshot = {
-    savedAt: Date.now(),
-    groups: (Array.isArray(groups) ? groups : []).map(g =>
-      (Array.isArray(g) ? g : []).map(p => (p && p.id !== undefined ? p.id : p))
-    ),
-  };
-  saveJSON(STORAGE_KEYS.LAST_TEAMS, snapshot);
-}
-
-export function getLastTeams() {
-  return loadJSON(STORAGE_KEYS.LAST_TEAMS, null);
-}
-
-// --- rounds (למסך מנהל) ---
-export function getRounds() {
-  return loadJSON(STORAGE_KEYS.ROUNDS, []);
-}
-
-export function setRounds(rounds) {
-  saveJSON(STORAGE_KEYS.ROUNDS, Array.isArray(rounds) ? rounds : []);
-}
-
-// --- Re-export מפורש כדי ש-Rollup יראה הכל ---
-export {
-  // utils
-  hasLS as __hasLS_internal__ // (לא בשימוש חיצוני; רק כדי "לגעת" בו אם צריך)
-};
-
-// default export (לא חובה, אבל מונע באגים של זיהוי מודולים)
-const storageAPI = {
-  STORAGE_KEYS,
-  loadJSON,
-  saveJSON,
-  getPlayers,
-  setPlayers,
-  countActive,
-  getTeamCount,
-  setTeamCount,
-  saveTeamsSnapshot,
-  getLastTeams,
-  getRounds,
-  setRounds,
-};
-export default storageAPI;
-
-// שורת re-export מפורשת נוספת (כפילות לא מזיקה, רק עוזרת לזיהוי ע"י הבילדר)
-export {
-  getPlayers, setPlayers, countActive,
-  getTeamCount, setTeamCount,
-  saveTeamsSnapshot, getLastTeams,
-  getRounds, setRounds
-};
