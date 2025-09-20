@@ -4,27 +4,37 @@ import { useStorage, POS } from "../lib/storage.js";
 import PlayerFormModal from "./PlayerFormModal.jsx";
 
 const COLS = [
-  { key: "active",   label: "משחק?" },
-  { key: "name",     label: "שם" },
-  { key: "pos",      label: "עמדה" },
-  { key: "rating",   label: "ציון" },
+  { key: "actions",  label: "פעולות" },
   { key: "mustWith", label: "חייב עם" },
   { key: "avoidWith",label: "לא עם" },
-  { key: "actions",  label: "פעולות" }
+  { key: "rating",   label: "ציון" },
+  { key: "pos",      label: "עמדה" },
+  { key: "name",     label: "שם" },
+  { key: "active",   label: "משחק?" },
 ];
 
-export default function Players() {
+export default function Players({ embedded = false }) {
   const { players, setPlayers } = useStorage();
   const [showAdd, setShowAdd] = useState(false);
   const [sort, setSort] = useState({ key: "rating", dir: "desc" });
 
-  // לשימוש ברשימות הבחירה (לא כולל השחקן עצמו)
-  const optionsById = useMemo(() => {
-    return players.map(p => ({ id: String(p.id), name: p.name }));
-  }, [players]);
+  // לשמירה לאחור (קבצי JSON ישנים: prefer/avoid)
+  const normalised = useMemo(
+    () => players.map(p => ({
+      ...p,
+      mustWith: p.mustWith ?? p.prefer ?? [],
+      avoidWith: p.avoidWith ?? p.avoid ?? [],
+    })),
+    [players]
+  );
+
+  const options = useMemo(
+    () => normalised.map(p => ({ id: String(p.id), name: p.name })),
+    [normalised]
+  );
 
   const sortedPlayers = useMemo(() => {
-    const arr = players.slice();
+    const arr = normalised.slice();
     arr.sort((a,b)=>{
       const k=sort.key;
       let va = k==="mustWith"||k==="avoidWith" ? (a[k]?.length||0)
@@ -40,39 +50,45 @@ export default function Players() {
       }
     });
     return arr;
-  }, [players, sort]);
+  }, [normalised, sort]);
 
   const flipSort = (key) =>
     setSort(s => s.key===key ? ({key, dir: s.dir==="asc"?"desc":"asc"}) : ({key, dir:"asc"}));
 
   const updatePlayer = (id, patch) =>
-    setPlayers(prev => prev.map(p => p.id === id ? ({...p, ...patch}) : p));
+    setPlayers(prev => prev.map(p =>
+      p.id === id ? ({ ...p, ...patch,
+        // התאמה לאחור
+        prefer: patch.mustWith ?? p.prefer,
+        avoid:  patch.avoidWith ?? p.avoid
+      }) : p
+    ));
 
   const removePlayer = (id) =>
     setPlayers(prev => prev.filter(p => p.id !== id));
 
-  // עוזר ליצירת רשימת אופציות ללא שחקן נוכחי
-  const listWithoutSelf = (selfId) => optionsById.filter(o => o.id !== String(selfId));
-
-  const updateMulti = (player, field, event) => {
-    const vals = Array.from(event.target.selectedOptions, o => String(o.value));
+  const listWithoutSelf = (selfId) => options.filter(o => o.id !== String(selfId));
+  const updateMulti = (player, field, e) => {
+    const vals = Array.from(e.target.selectedOptions, o => String(o.value));
     updatePlayer(player.id, { [field]: vals });
   };
 
   return (
-    <div className="players-page" dir="rtl">
+    <div className={embedded ? "players-embed-root" : "players-page"} dir="rtl">
       <div className="toolbar players-toolbar">
         <button className="btn primary" onClick={() => setShowAdd(true)}>הוסף שחקן</button>
       </div>
 
-      <div className="table-wrapper">
+      <div className={embedded ? "table-scroll" : "table-wrapper"}>
         <table className="players-table">
           <thead>
             <tr>
               {COLS.map(c => (
-                <th key={c.key}
-                    onClick={()=>c.key!=="actions" && flipSort(c.key)}
-                    style={{cursor: c.key!=="actions" ? "pointer":"default"}}>
+                <th
+                  key={c.key}
+                  onClick={()=>c.key!=="actions" && flipSort(c.key)}
+                  style={{cursor: c.key!=="actions" ? "pointer" : "default"}}
+                >
                   {c.label}{sort.key===c.key ? (sort.dir==="asc" ? " ▲":" ▼") : ""}
                 </th>
               ))}
@@ -81,24 +97,8 @@ export default function Players() {
           <tbody>
             {sortedPlayers.map(p => (
               <tr key={p.id}>
-                <td><input type="checkbox" checked={!!p.active}
-                      onChange={e => updatePlayer(p.id, {active: e.target.checked})}/></td>
+                <td><button className="btn danger" onClick={()=>removePlayer(p.id)}>מחיקה</button></td>
 
-                <td><input className="input" value={p.name}
-                      onChange={e => updatePlayer(p.id, {name: e.target.value})}/></td>
-
-                <td>
-                  <select value={p.pos}
-                          onChange={e => updatePlayer(p.id, {pos: e.target.value})}>
-                    {POS.map(op => <option key={op} value={op}>{op}</option>)}
-                  </select>
-                </td>
-
-                <td><input type="number" className="input" step="0.1" min="1" max="10"
-                      value={p.rating}
-                      onChange={e => updatePlayer(p.id, {rating: Number(e.target.value)})}/></td>
-
-                {/* חייב עם – רשימת בחירה מרשימת השחקנים */}
                 <td className="nowrap">
                   <select multiple size={4} className="multi"
                           value={(p.mustWith||[]).map(String)}
@@ -109,7 +109,6 @@ export default function Players() {
                   </select>
                 </td>
 
-                {/* לא עם – רשימת בחירה מרשימת השחקנים */}
                 <td className="nowrap">
                   <select multiple size={4} className="multi"
                           value={(p.avoidWith||[]).map(String)}
@@ -120,7 +119,24 @@ export default function Players() {
                   </select>
                 </td>
 
-                <td><button className="btn danger" onClick={()=>removePlayer(p.id)}>מחיקה</button></td>
+                <td>
+                  <input type="number" className="input" step="0.1" min="1" max="10"
+                         value={p.rating}
+                         onChange={e => updatePlayer(p.id, {rating: Number(e.target.value)})}/>
+                </td>
+
+                <td>
+                  <select value={p.pos} onChange={e => updatePlayer(p.id, {pos: e.target.value})}>
+                    {POS.map(op => <option key={op} value={op}>{op}</option>)}
+                  </select>
+                </td>
+
+                <td><input className="input"
+                           value={p.name}
+                           onChange={e => updatePlayer(p.id, {name: e.target.value})}/></td>
+
+                <td><input type="checkbox" checked={!!p.active}
+                           onChange={e => updatePlayer(p.id, {active: e.target.checked})}/></td>
               </tr>
             ))}
           </tbody>
@@ -129,7 +145,7 @@ export default function Players() {
 
       {showAdd && (
         <PlayerFormModal
-          players={players}
+          players={normalised}
           onClose={() => setShowAdd(false)}
           onSave={(np)=>{ setPlayers(prev=>[{...np}, ...prev]); setShowAdd(false); }}
         />
