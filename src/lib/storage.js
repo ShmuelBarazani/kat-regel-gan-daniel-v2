@@ -1,12 +1,15 @@
 // src/lib/storage.js
 
+// ===== Keys =====
 const STORAGE_KEYS = {
   players: "katregal:players",
+  teamCount: "katregal:teamCount",
   teams: "katregal:teams",
   teamsHistory: "katregal:teams:snapshots",
-  teamCount: "katregal:teamCount",
+  rounds: "katregal:rounds" // NEW
 };
 
+// LocalStorage-safe (עובד גם בזמן build/SSR)
 function ls() {
   if (typeof window === "undefined") {
     const mem = new Map();
@@ -32,7 +35,9 @@ function readJSON(key, fallback) {
 function writeJSON(key, value) {
   try {
     ls().setItem(key, JSON.stringify(value));
-  } catch {}
+  } catch {
+    // ignore quota/permission errors
+  }
 }
 
 // ===== Players API =====
@@ -61,6 +66,16 @@ export function setTeamCount(n) {
   writeJSON(STORAGE_KEYS.teamCount, Number.isFinite(num) && num > 0 ? num : 4);
 }
 
+// ===== Rounds (NEW) =====
+// מבנה מומלץ: [{id:1, name:"מחזור 1", date:"2025-09-01"}, ...]
+export function getRounds() {
+  return readJSON(STORAGE_KEYS.rounds, []);
+}
+
+export function setRounds(rounds) {
+  writeJSON(STORAGE_KEYS.rounds, Array.isArray(rounds) ? rounds : []);
+}
+
 // ===== Teams snapshots/history =====
 export function saveTeamsSnapshot(snapshot) {
   const history = readJSON(STORAGE_KEYS.teamsHistory, []);
@@ -79,11 +94,13 @@ export function getTeamsHistory() {
   return readJSON(STORAGE_KEYS.teamsHistory, []);
 }
 
+// ===== Maintenance =====
 export function clearAllStorage() {
   try {
     ls().removeItem(STORAGE_KEYS.players);
     ls().removeItem(STORAGE_KEYS.teamCount);
     ls().removeItem(STORAGE_KEYS.teams);
     ls().removeItem(STORAGE_KEYS.teamsHistory);
+    ls().removeItem(STORAGE_KEYS.rounds);
   } catch {}
 }
