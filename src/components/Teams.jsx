@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { useStorage, sum } from "../lib/storage.js";
 import Players from "./Players.jsx";
 
-const TEAMS_LS = "katregel_last_teams_v2"; // מפתח לשמירת הכוחות
+const TEAMS_LS = "katregel_last_teams_v2";
 
 export default function Teams() {
   const { players, hiddenRatings, setHiddenRatings, setCycles } = useStorage();
@@ -13,12 +13,13 @@ export default function Teams() {
 
   const activePlayers = useMemo(() => players.filter(p => p.active), [players]);
 
-  /* -------- שחזור כוחות בעת כניסה למסך -------- */
+  /** שחזור כוחות בעת כניסה למסך */
   useEffect(() => {
     try {
       const raw = localStorage.getItem(TEAMS_LS);
       if (!raw) return;
-      const saved = JSON.parse(raw); // {teamCount, groups:[[id,id...], ...]}
+      const saved = JSON.parse(raw); // { teamCount, groups: [[id,id,...], ...] }
+
       const idMap = new Map(players.map(p => [String(p.id), p]));
       const restored = (saved?.groups || []).map(g =>
         (Array.isArray(g) ? g : []).map(id => idMap.get(String(id))).filter(Boolean)
@@ -30,7 +31,7 @@ export default function Teams() {
     } catch {}
   }, [players]);
 
-  /* -------- שמירת כוחות בכל שינוי -------- */
+  /** שמירה בכל שינוי */
   useEffect(() => {
     if (!teams.length) return;
     const payload = {
@@ -40,11 +41,16 @@ export default function Teams() {
     localStorage.setItem(TEAMS_LS, JSON.stringify(payload));
   }, [teams]);
 
-  /* -------- יצירת כוחות מאוזנים לפי ממוצע -------- */
+  /** יצירה מאוזנת לפי ממוצע */
   const makeBalancedTeams = useCallback(() => {
     let g = balancedByAverage(activePlayers, teamCount);
     g = optimizeByAverage(g, 2000);
     setTeams(g.map(sortByRatingDesc));
+    // נשמר גם ברגע הלחיצה (בנוסף ל-useEffect)
+    setTimeout(() => {
+      const payload = { teamCount, groups: g.map(t => t.map(p => String(p.id))) };
+      localStorage.setItem(TEAMS_LS, JSON.stringify(payload));
+    }, 0);
   }, [activePlayers, teamCount]);
 
   const saveTeamsAsCycle = () => {
@@ -59,7 +65,7 @@ export default function Teams() {
     alert("הכוחות נשמרו למחזור.");
   };
 
-  /* -------- Drag & Drop -------- */
+  /** Drag & Drop */
   const onDragStart = (e, pid, fromIdx) =>
     e.dataTransfer.setData("text/plain", JSON.stringify({ pid, fromIdx }));
 
@@ -122,7 +128,8 @@ export default function Teams() {
   };
 
   return (
-    <div className="teams-page" dir="rtl">
+    <div className="teams-page container" dir="rtl">
+      {/* טול־בר */}
       <div className="toolbar">
         <button className="btn primary" onClick={makeBalancedTeams}>עשה כוחות</button>
         <button className="btn" onClick={saveTeamsAsCycle}>קבע כוחות</button>
@@ -153,9 +160,10 @@ export default function Teams() {
         <div className="toolbar-note">טיפ: כל לחיצה על <b>עשה כוחות</b> תיצור חלוקה חדשה ומאוזנת.</div>
       </div>
 
+      {/* קבוצות – בראש הדף */}
       <div className="teams-grid">{teams.map(renderTeam)}</div>
 
-      {/* טבלת שחקנים משובצת – רק הטבלה גוללת, כותרות דביקות */}
+      {/* טבלת השחקנים – מתחת לקבוצות */}
       <div className="players-embed">
         <Players embedded />
       </div>
@@ -163,10 +171,12 @@ export default function Teams() {
   );
 }
 
-/* -------- עזרי איזון -------- */
+/*** helpers ***/
 function avg(arr, sel = (x)=>x){ if(!arr?.length) return 0; return arr.reduce((a,x)=>a+(sel(x)||0),0)/arr.length; }
 function sortByRatingDesc(a){ return [...a].sort((x,y)=>y.rating-x.rating); }
 function emptyTeams(n){ return Array.from({length:n},()=>[]); }
+function desiredSizes(n,k){ const base=Math.floor(n/k), extra=n%k; return Array.from({length:k},(_,i)=>base+(i<extra?1:0)); }
+function nextIndex(i,k,dir){ const j=i+dir; return j<0?0:j>=k?k-1:j; }
 
 function balancedByAverage(players, k){
   const sorted = [...players].sort((a,b)=>b.rating-a.rating);
@@ -181,9 +191,6 @@ function balancedByAverage(players, k){
   }
   return groups;
 }
-function desiredSizes(n,k){ const base=Math.floor(n/k), extra=n%k; return Array.from({length:k},(_,i)=>base+(i<extra?1:0)); }
-function nextIndex(i,k,dir){ const j=i+dir; return j<0?0:j>=k?k-1:j; }
-
 function optimizeByAverage(groups, iters=2000){
   const k = groups.length;
   const g = groups.map(a=>a.slice());
