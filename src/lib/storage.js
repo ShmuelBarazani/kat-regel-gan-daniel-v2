@@ -1,58 +1,32 @@
 // src/lib/storage.js
-import { useEffect, useState } from "react";
+export const KEYS = {
+  PLAYERS: 'katregel_players_v2',
+  TEAMS:   'katregel_last_teams_v2',
+  ROUNDS:  'katregel_rounds_v2',
+};
 
-export const POS = ["GK", "DF", "MF", "FW"];
+const read = (k, fallback) => {
+  try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fallback; }
+  catch { return fallback; }
+};
+const write = (k, v) => localStorage.setItem(k, JSON.stringify(v));
 
-const K_PLAYERS = "katregel_players_v2";
-const K_CYCLES  = "katregel_cycles_v2";
-const K_LAST    = "katregel_last_teams_v2";
+// Players
+export const getPlayers = (fallback = []) => read(KEYS.PLAYERS, fallback);
+export const setPlayers = (players) => write(KEYS.PLAYERS, players);
 
-export function useStorage() {
-  const [players, setPlayersState] = useState([]);
+// Last teams state (for “עשה כוחות” חזרה למסך)
+export const getTeamsState = () => read(KEYS.TEAMS, { teamCount: 4, groups: [] });
+export const setTeamsState = (state) => write(KEYS.TEAMS, state);
 
-  // טעינת שחקנים ראשונית (מה-localStorage, ואם אין – מ/public/players.json)
-  useEffect(() => {
-    const saved = localStorage.getItem(K_PLAYERS);
-    if (saved) {
-      setPlayersState(JSON.parse(saved));
-    } else {
-      fetch("/players.json")
-        .then(r => r.json())
-        .then(list => {
-          const norm = list.map(x => ({
-            id: String(x.id ?? crypto.randomUUID()),
-            name: x.name,
-            pos: x.pos,
-            rating: Number(x.r ?? x.rating ?? 6.5),
-            active: !!x.selected,
-            mustWith: x.prefer ?? [],
-            avoidWith: x.avoid ?? [],
-          }));
-          setPlayersState(norm);
-          localStorage.setItem(K_PLAYERS, JSON.stringify(norm));
-        })
-        .catch(() => setPlayersState([]));
-    }
-  }, []);
+// Saved rounds
+export const getRounds = () => read(KEYS.ROUNDS, []);
+export const setRounds = (rounds) => write(KEYS.ROUNDS, rounds);
+export const addRound = (round) => {
+  const list = getRounds();
+  list.unshift(round);
+  setRounds(list);
+};
 
-  const setPlayers = (updater) =>
-    setPlayersState(prev => {
-      const next = typeof updater === "function" ? updater(prev) : updater;
-      localStorage.setItem(K_PLAYERS, JSON.stringify(next));
-      return next;
-    });
-
-  // מחזורים (Saved cycles)
-  const getCycles = () => JSON.parse(localStorage.getItem(K_CYCLES) || "[]");
-  const setCycles = (arr) => localStorage.setItem(K_CYCLES, JSON.stringify(arr));
-  const addCycle  = (cycle) => { const a = getCycles(); a.unshift(cycle); setCycles(a); };
-  const removeCycles = (ids) => {
-    setCycles(getCycles().filter(c => !ids.includes(c.id)));
-  };
-
-  // קבוצות אחרונות (מצב עמוד "עשה כוחות")
-  const getLastTeams = () => JSON.parse(localStorage.getItem(K_LAST) || "null");
-  const setLastTeams = (obj) => localStorage.setItem(K_LAST, JSON.stringify(obj));
-
-  return { players, setPlayers, getCycles, setCycles, addCycle, removeCycles, getLastTeams, setLastTeams };
-}
+// Helpers
+export const countActive = (players) => players.filter(p => !!p.play).length;
