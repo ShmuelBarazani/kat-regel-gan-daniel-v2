@@ -1,32 +1,30 @@
 // src/lib/storage.js
-export const KEYS = {
-  PLAYERS: 'katregel_players_v2',
-  TEAMS:   'katregel_last_teams_v2',
-  ROUNDS:  'katregel_rounds_v2',
+import { useEffect, useState } from "react";
+
+export const loadJSON = (key, fallback = null) => {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw != null ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
+  }
 };
 
-const read = (k, fallback) => {
-  try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fallback; }
-  catch { return fallback; }
-};
-const write = (k, v) => localStorage.setItem(k, JSON.stringify(v));
-
-// Players
-export const getPlayers = (fallback = []) => read(KEYS.PLAYERS, fallback);
-export const setPlayers = (players) => write(KEYS.PLAYERS, players);
-
-// Last teams state (for “עשה כוחות” חזרה למסך)
-export const getTeamsState = () => read(KEYS.TEAMS, { teamCount: 4, groups: [] });
-export const setTeamsState = (state) => write(KEYS.TEAMS, state);
-
-// Saved rounds
-export const getRounds = () => read(KEYS.ROUNDS, []);
-export const setRounds = (rounds) => write(KEYS.ROUNDS, rounds);
-export const addRound = (round) => {
-  const list = getRounds();
-  list.unshift(round);
-  setRounds(list);
+export const saveJSON = (key, value) => {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {}
 };
 
-// Helpers
-export const countActive = (players) => players.filter(p => !!p.play).length;
+// ה־hook שביקשת: useStorage – יצוא בשם הזה כדי ש-Teams.jsx יוכל לייבא אותו
+export const useStorage = (key, initialValue) => {
+  const [value, setValue] = useState(() => loadJSON(key, initialValue));
+  useEffect(() => { saveJSON(key, value); }, [key, value]);
+  return [value, setValue];
+};
+
+// מפתחות שימושיים (לא חובה, רק לנוחות)
+export const STORAGE_KEYS = {
+  LAST_TEAMS: "katregel_last_teams_v2",
+  PLAYERS: "katregel_players_v2",
+};
