@@ -257,3 +257,56 @@ export default {
   setRoundResults,
   deleteRounds,
 };
+// =============== ROUNDS (Cycles) =================
+
+// key קבוע ל־localStorage
+const ROUNDS_KEY = "katregel_rounds_v1";
+
+// עוזרים בטוחים ל־SSR/Build (לא נוגעים ב-window בזמן build)
+function hasLS() {
+  return typeof window !== "undefined" && !!window.localStorage;
+}
+function readLS(key, fallback = null) {
+  try {
+    if (hasLS()) {
+      const v = window.localStorage.getItem(key);
+      if (v != null) return JSON.parse(v);
+    }
+  } catch (_) {}
+  return fallback;
+}
+function writeLS(key, value) {
+  try {
+    if (hasLS()) window.localStorage.setItem(key, JSON.stringify(value));
+  } catch (_) {}
+}
+
+/**
+ * מחזיר מערך מחזורים (rounds).
+ * קודם כל מנסה מה־localStorage; אם ריק – מנסה לטעון מ־/data/cycles.json.
+ */
+export async function getRounds() {
+  const fromLS = readLS(ROUNDS_KEY, null);
+  if (fromLS) return fromLS;
+
+  // נפילה שקטה אם אין קובץ/גישה (ריצה רק בדפדפן)
+  try {
+    const res = await fetch("/data/cycles.json", { cache: "no-store" });
+    if (res.ok) {
+      const data = await res.json();
+      writeLS(ROUNDS_KEY, data);
+      return data;
+    }
+  } catch (_) {}
+
+  return []; // דיפולט
+}
+
+/**
+ * שומר מערך מחזורים ל־localStorage ומחזיר אותו.
+ */
+export function setRounds(rounds) {
+  const safe = Array.isArray(rounds) ? rounds : [];
+  writeLS(ROUNDS_KEY, safe);
+  return safe;
+}
