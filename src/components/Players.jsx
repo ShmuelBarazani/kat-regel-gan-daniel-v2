@@ -1,6 +1,8 @@
 // src/components/Players.jsx
+// מסך שחקנים מלא + ייבוא/ייצוא + עיצוב כבתמונה
+// תלוי ב: ../lib/storage  (getPlayers, setPlayers, countActive)
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { getPlayers, setPlayers, countActive } from "../lib/storage";
 
 const POS_OPTIONS = [
@@ -10,18 +12,104 @@ const POS_OPTIONS = [
   { v: "FW", t: "התקפה" },
 ];
 
+// עוזר לעיצוב
+const styles = {
+  page: { direction: "rtl", maxWidth: 1200, margin: "20px auto", padding: "0 12px", color: "#E8EEFC" },
+  toolbar: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 12 },
+  pillBtn: {
+    padding: "6px 12px",
+    borderRadius: 999,
+    background: "#27c463",
+    border: "none",
+    color: "#0b1220",
+    fontWeight: 700,
+    cursor: "pointer",
+  },
+  pillGhost: {
+    padding: "4px 10px",
+    borderRadius: 999,
+    border: "1px solid #2a7a52",
+    background: "transparent",
+    color: "#8de4b7",
+    fontWeight: 600,
+    cursor: "pointer",
+  },
+  input: {
+    padding: "6px 10px",
+    borderRadius: 8,
+    border: "1px solid #24324a",
+    background: "#0f1a2e",
+    color: "#E8EEFC",
+  },
+  tableWrap: { overflow: "auto", borderRadius: 12, border: "1px solid #24324a" },
+  th: {
+    position: "sticky",
+    top: 0,
+    background: "#0f1a2e",
+    color: "#9fb0cb",
+    textAlign: "right",
+    padding: "10px 8px",
+    borderBottom: "1px solid #24324a",
+    fontWeight: 700,
+    whiteSpace: "nowrap",
+  },
+  td: { textAlign: "right", padding: "8px", borderBottom: "1px solid #1b2941" },
+  chip: {
+    display: "inline-block",
+    padding: "2px 10px",
+    borderRadius: 999,
+    border: "1px solid #2a7a52",
+    color: "#8de4b7",
+    cursor: "pointer",
+    userSelect: "none",
+  },
+  danger: {
+    padding: "6px 10px",
+    borderRadius: 8,
+    border: "1px solid #ff5c7a",
+    background: "transparent",
+    color: "#ff5c7a",
+    cursor: "pointer",
+  },
+};
+
 export default function Players() {
   const [players, setPlayersState] = useState([]);
   const [filter, setFilter] = useState("");
+  const [hideRatings, setHideRatings] = useState(false);
+  const [sortAsc, setSortAsc] = useState(true);
+  const fileRef = useRef(null);
 
-  // טעינה ראשונה + זריעת ברירת מחדל תיעשה ע"י storage.getPlayers()
+  // טעינה ראשונית: 1) נסה להביא מקובץ public/players.json (אם קיים)
+  // 2) אחרת – מה-localStorage (getPlayers)
   useEffect(() => {
-    try {
-      const list = getPlayers();
-      setPlayersState(Array.isArray(list) ? list : []);
-    } catch {
-      setPlayersState([]);
-    }
+    let cancelled = false;
+
+    (async () => {
+      try {
+        // קודם ננסה קובץ חיצוני אם נוסף לפרויקט (להחזרת "הרשימה שהייתה לנו")
+        const res = await fetch("/players.json", { cache: "no-store" });
+        if (res.ok) {
+          const fromFile = await res.json();
+          const normalized = normalizeImportedList(fromFile);
+          if (!cancelled && normalized.length) {
+            setPlayersState(normalized);
+            setPlayers(normalized);
+            return;
+          }
+        }
+      } catch (e) {
+        // אין קובץ – לא נורא, נמשיך ל-localStorage
+      }
+      try {
+        const list = getPlayers();
+        if (!cancelled) setPlayersState(Array.isArray(list) ? list : []);
+      } catch {
+        if (!cancelled) setPlayersState([]);
+      }
+    })();
+
+    return () => (cancelled = true);
   }, []);
 
   // שמירה ל-storage בכל שינוי
@@ -29,6 +117,27 @@ export default function Players() {
     setPlayers(players);
   }, [players]);
 
+  const activeCount = countActive(players);
+
+  const filtered = useMemo(() => {
+    const q = (filter || "").trim();
+    const base = !q ? players : players.filter((p) => (p?.name || "").includes(q));
+    const sorted = [...base].sort((a, b) =>
+      (a.name || "").localeCompare(b.name || "", "he", { sensitivity: "base" })
+    );
+    return sortAsc ? sorted : sorted.reverse();
+  }, [players, filter, sortAsc]);
+
+  // פעולות שורה
+  const update = (idx, patch) => {
+    const next = players.map((p, i) => (i === idx ? { ...p, ...patch } : p));
+    setPlayersState(next);
+  };
+  const remove = (idx) => {
+    if (!confirm("למחוק את השחקן?")) return;
+    const next = players.filter((_, i) => i !== idx);
+    setPlayersState(next);
+  };
   const addPlayer = () => {
     const next = [
       ...players,
@@ -37,139 +146,61 @@ export default function Players() {
     setPlayersState(next);
   };
 
-  const update = (idx, patch) => {
-    const next = players.map((p, i) => (i === idx ? { ...p, ...patch } : p));
-    setPlayersState(next);
+  // עריכת רשימות "חייב עם" / "לא עם" בחלון prompt פשוט (זריז)
+  const editNamesList = (label, currentList, idxKey) => {
+    const cur = (currentList || []).join(", ");
+    const val = prompt(`${label} — רשום שמות מופרדים בפסיק`, cur);
+    if (val === null) return;
+    const arr = splitList(val);
+    update(idxKey, arr.key === "mustWith" ? { mustWith: arr.list } : { avoidWith: arr.list });
   };
 
-  const remove = (idx) => {
-    const next = players.filter((_, i) => i !== idx);
-    setPlayersState(next);
+  // ייבוא/ייצוא
+  const exportPlayersFile = () => {
+    const blob = new Blob([JSON.stringify(players, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "players.export.json";
+    a.click();
+    URL.revokeObjectURL(a.href);
   };
-
-  const filtered = useMemo(() => {
-    const q = (filter || "").trim();
-    if (!q) return players;
-    return players.filter((p) => (p?.name || "").includes(q));
-  }, [players, filter]);
-
-  const activeCount = countActive(players);
+  const openImport = () => fileRef.current?.click();
+  const onImportFile = async (e) => {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f) return;
+    const text = await f.text();
+    importFromText(text);
+  };
+  const importFromText = (text) => {
+    try {
+      let list = [];
+      // נסה JSON
+      try {
+        const j = JSON.parse(text);
+        list = normalizeImportedList(j);
+      } catch {
+        // נסה CSV/טקסט: name,pos,rating  או שורה = שם בלבד
+        list = parseCSVorLines(text);
+      }
+      if (!list.length) {
+        alert("לא זוהו שחקנים תקינים לייבוא.");
+        return;
+      }
+      setPlayersState(list);
+      setPlayers(list);
+      alert(`יובאו ${list.length} שחקנים.`);
+    } catch (e) {
+      alert("נכשל ייבוא: " + e.message);
+    }
+  };
 
   return (
-    <div style={{ direction: "rtl", maxWidth: 1100, margin: "20px auto", padding: "0 12px", color: "#E8EEFC" }}>
-      <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-        <div style={{ fontSize: 18 }}>
-          <b>שחקנים</b> &nbsp;—&nbsp; פעילים: {activeCount} / {players.length}
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <input
-            placeholder="חפש לפי שם…"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #24324a", background: "#0f1a2e", color: "#E8EEFC" }}
-          />
-          <button onClick={addPlayer} style={{ padding: "8px 12px", borderRadius: 8, background: "#27c463", border: "none", color: "#0b1220", fontWeight: 600 }}>
-            הוסף שחקן
-          </button>
-        </div>
-      </header>
-
-      <div style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 800 }}>
-          <thead>
-            <tr style={{ background: "#0f1a2e" }}>
-              <th style={th}>פעולות</th>
-              <th style={th}>לא עם</th>
-              <th style={th}>חייב עם</th>
-              <th style={th}>ציון</th>
-              <th style={th}>עמדה</th>
-              <th style={th}>שם</th>
-              <th style={th}>משחק?</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((p, idx) => (
-              <tr key={idx} style={{ borderTop: "1px solid #24324a" }}>
-                <td style={td}>
-                  <button onClick={() => remove(idx)} style={btnDanger}>מחק</button>
-                </td>
-                <td style={td}>
-                  <input
-                    value={(p.avoidWith || []).join(", ")}
-                    onChange={(e) => update(idx, { avoidWith: splitList(e.target.value) })}
-                    style={inp}
-                    placeholder="שמות מופרדים בפסיק"
-                  />
-                </td>
-                <td style={td}>
-                  <input
-                    value={(p.mustWith || []).join(", ")}
-                    onChange={(e) => update(idx, { mustWith: splitList(e.target.value) })}
-                    style={inp}
-                    placeholder="שמות מופרדים בפסיק"
-                  />
-                </td>
-                <td style={td}>
-                  <input
-                    type="number"
-                    step="0.5"
-                    min="1"
-                    max="10"
-                    value={p.rating ?? 6}
-                    onChange={(e) => update(idx, { rating: Number(e.target.value) })}
-                    style={{ ...inp, width: 80 }}
-                  />
-                </td>
-                <td style={td}>
-                  <select
-                    value={p.pos || "MF"}
-                    onChange={(e) => update(idx, { pos: e.target.value })}
-                    style={{ ...inp, width: 120 }}
-                  >
-                    {POS_OPTIONS.map(o => (
-                      <option key={o.v} value={o.v}>{o.t}</option>
-                    ))}
-                  </select>
-                </td>
-                <td style={td}>
-                  <input
-                    value={p.name || ""}
-                    onChange={(e) => update(idx, { name: e.target.value })}
-                    style={inp}
-                    placeholder="שם השחקן"
-                  />
-                </td>
-                <td style={td}>
-                  <input
-                    type="checkbox"
-                    checked={p.active !== false}
-                    onChange={(e) => update(idx, { active: e.target.checked })}
-                  />
-                </td>
-              </tr>
-            ))}
-            {filtered.length === 0 && (
-              <tr>
-                <td colSpan={7} style={{ ...td, textAlign: "center", color: "#9fb0cb" }}>
-                  אין שחקנים תואמים. נסה לאפס את החיפוש או להוסיף שחקן חדש.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-const th = { textAlign: "right", padding: "10px 8px", borderBottom: "1px solid #24324a", fontWeight: 600 };
-const td = { textAlign: "right", padding: "8px" };
-const inp = { padding: "6px 10px", borderRadius: 8, border: "1px solid #24324a", background: "#0f1a2e", color: "#E8EEFC", width: "100%" };
-const btnDanger = { padding: "6px 10px", borderRadius: 8, border: "1px solid #ff5c7a", background: "transparent", color: "#ff5c7a", cursor: "pointer" };
-
-function splitList(s) {
-  return (s || "")
-    .split(",")
-    .map(x => x.trim())
-    .filter(Boolean);
-}
+    <div style={styles.page}>
+      {/* סרגל עליון כמו בצילום */}
+      <div style={styles.toolbar}>
+        <button style={styles.pillBtn} onClick={addPlayer}>הוסף שחקן</button>
+        <button style={styles.pillGhost} onClick={() => setHideRatings((v) => !v)}>
+          {hideRatings ? "הצג ציונים" : "הסתר ציונים"}
+        </button>
+        <button style={styles.pillGhost} onClick={() => setSortAsc((v) => !v)}>
