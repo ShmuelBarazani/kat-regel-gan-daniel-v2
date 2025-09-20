@@ -1,106 +1,98 @@
 // src/lib/storage.js
-// ------------------------------------------------------
-// Utilities שמרכזים גישה ל-localStorage + מפתחות קבועים
-// וכל הפונקציות שהקומפוננטות (Teams/Players/Admin) מייבאות.
-// ------------------------------------------------------
+// עטיפת LocalStorage עם שמירת/קריאת JSON + פונקציות אחידות לכל המסכים
 
-// --- helpers ---
-const hasLS = () =>
-  typeof window !== "undefined" && typeof window.localStorage !== "undefined";
+// --- מפתחות שמורים ---
+export const STORAGE_KEYS = {
+  PLAYERS: "players_v2",
+  TEAM_COUNT: "team_count_v2",
+  LAST_TEAMS: "katregel_last_teams_v2",
+  ROUNDS: "rounds_v2",
+};
+
+// --- Utilities: קריאה/שמירה ל-LS בבטחה ---
+function hasLS() {
+  return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
+}
 
 export function loadJSON(key, fallback = null) {
+  if (!hasLS()) return fallback;
   try {
-    if (hasLS()) {
-      const s = window.localStorage.getItem(key);
-      if (s !== null) return JSON.parse(s);
-    }
-  } catch (_) {}
-  return fallback;
+    const raw = window.localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 export function saveJSON(key, value) {
+  if (!hasLS()) return;
   try {
-    if (hasLS()) {
-      window.localStorage.setItem(key, JSON.stringify(value));
-    }
-  } catch (_) {}
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // ignore quota/serialize errors
+  }
 }
 
-// --- keys ---
-export const STORAGE_KEYS = {
-  TEAM_COUNT: "katregel_team_count",
-  LAST_TEAMS: "katregel_last_teams_v2",
-  PLAYERS: "players",            // שם ברירת מחדל לשמירת רשימת השחקנים
-  ROUNDS: "katregel_rounds_v2",  // ארכיון מחזורים (למסך מנהל)
-};
-
-// ------------------------------------------------------
-// Players list
-// ------------------------------------------------------
+// --- Players ---
 export function getPlayers() {
-  // סינכרוני: מחזיר מ-localStorage אם קיים; אחרת מחזיר מערך ריק.
-  // (הטענות אסינכרוניות מקובץ/שרת אם יש — יתבצעו בקוד אחר.)
-  const ls = loadJSON(STORAGE_KEYS.PLAYERS, null);
-  if (Array.isArray(ls)) return ls;
-
-  // תמיכה ב-Fallback אופציונלי (אם הוגדר גלובלית איפשהו):
-  if (Array.isArray(window?.__INITIAL_PLAYERS__)) {
-    return window.__INITIAL_PLAYERS__;
-  }
-
-  return [];
+  return loadJSON(STORAGE_KEYS.PLAYERS, []);
 }
 
-export function setPlayers(list) {
-  // list חייב להיות מערך של שחקנים
-  if (Array.isArray(list)) {
-    saveJSON(STORAGE_KEYS.PLAYERS, list);
-  }
+export function setPlayers(players) {
+  saveJSON(STORAGE_KEYS.PLAYERS, Array.isArray(players) ? players : []);
 }
 
-// ------------------------------------------------------
-// Team count (מספר קבוצות במסך הכוחות)
-// ------------------------------------------------------
+// נטרול שונות בין שמות שדות ל"משחק?"
+function isPlaying(p) {
+  if (!p || typeof p !== "object") return false;
+  if ("plays" in p) return !!p.plays;
+  if ("play" in p) return !!p.play;
+  if ("isPlaying" in p) return !!p.isPlaying;
+  if (p["משחק"] !== undefined) return !!p["משחק"];
+  // ברירת מחדל היסטורית: אם לא קיים שדה – נחשב כמשחק
+  return true;
+}
+
+export function countActive(players = null) {
+  const list = players ?? getPlayers();
+  return (list || []).filter(isPlaying).length;
+}
+
+// --- Team count (מספר קבוצות) ---
 export function getTeamCount() {
-  return Number(loadJSON(STORAGE_KEYS.TEAM_COUNT, 4));
-}
-export function setTeamCount(n) {
-  saveJSON(STORAGE_KEYS.TEAM_COUNT, Number(n));
+  // ברירת מחדל: 4 קבוצות
+  return loadJSON(STORAGE_KEYS.TEAM_COUNT, 4);
 }
 
-// ------------------------------------------------------
-// Last teams snapshot (שמירת צילום הכוחות האחרון למסך הכוחות)
-// ------------------------------------------------------
-export function saveTeamsSnapshot(snapshot) {
-  // snapshot יכול להיות { teamCount, groups, meta } וכו'
+export function setTeamCount(n) {
+  const safe = Number.isFinite(+n) && +n > 0 ? +n : 4;
+  saveJSON(STORAGE_KEYS.TEAM_COUNT, safe);
+}
+
+// --- שמירת פירוט הכוחות האחרון (לשימוש במסך מנהל/תוצאות) ---
+export function saveTeamsSnapshot(groups) {
+  // groups: מערך קבוצות; כל קבוצה היא מערך שחקנים (אובייקטים מלאים או ids)
+  // נשמור בצורה קלה לשחזור/תצוגה
+  const snapshot = {
+    savedAt: Date.now(),
+    groups: (Array.isArray(groups) ? groups : []).map(g =>
+      (Array.isArray(g) ? g : []).map(p => (p && p.id !== undefined ? p.id : p))
+    ),
+  };
   saveJSON(STORAGE_KEYS.LAST_TEAMS, snapshot);
 }
 
 export function getLastTeams() {
+  // מחזיר {savedAt, groups: number[][]} או null
   return loadJSON(STORAGE_KEYS.LAST_TEAMS, null);
 }
 
-// ------------------------------------------------------
-// Count active players (כמה מסומנים "משחק")
-// ------------------------------------------------------
-export function countActive(players = []) {
-  return players.reduce((acc, p) => {
-    // תמיכה בשמות שדה שונים: plays / isPlaying / active / משחק
-    const flag = p?.plays ?? p?.isPlaying ?? p?.active ?? p?.משחק ?? false;
-    return acc + (flag ? 1 : 0);
-  }, 0);
-}
-
-// ------------------------------------------------------
-// Rounds archive (למסך מנהל – אם נדרש getRounds/setRounds וכד')
-// ------------------------------------------------------
+// --- מחזורים שמורים (למסך מנהל) ---
 export function getRounds() {
+  // מערך של אובייקטים שמורים לפי המבנה שלך; ברירת מחדל []
   return loadJSON(STORAGE_KEYS.ROUNDS, []);
 }
 
 export function setRounds(rounds) {
-  // rounds = מערך של מחזורים שנשמרו (כל מבנה שנוח לכם)
-  if (Array.isArray(rounds)) {
-    saveJSON(STORAGE_KEYS.ROUNDS, rounds);
-  }
+  saveJSON(STORAGE_KEYS.ROUNDS, Array.isArray(rounds) ? rounds : []);
 }
