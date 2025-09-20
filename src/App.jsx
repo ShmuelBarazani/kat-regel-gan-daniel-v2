@@ -1,92 +1,50 @@
-import React, { createContext, useEffect, useMemo, useState } from "react";
-import PlayersPage from "./pages/Players.jsx";
-import TeamsPage from "./pages/Teams.jsx";
-import RankingPage from "./pages/Ranking.jsx";
-import AdminPage from "./pages/Admin.jsx";
+import React from "react";
+import { Routes, Route, Navigate } from "react-router-dom";
+import TopNav from "./components/TopNav.jsx";
 
-export const AppCtx = createContext(null);
+// מסכים שאתה כבר מחזיק (הדבקת אותם בשיחות הקודמות)
+import Players from "./pages/Players.jsx";
+import DoForces from "./pages/DoForces.jsx";
 
-const css = {
-  page:{minHeight:"100vh",background:"#0b131f",color:"#dbeafe"},
-  wrap:{maxWidth:1320,margin:"0 auto",padding:16,display:"flex",flexDirection:"column",gap:12},
-  title:{textAlign:"center",fontSize:28,margin:"6px 0"},
-  tabs:{display:"flex",justifyContent:"center",gap:8,marginBottom:6,flexWrap:"wrap"},
-  pill:(on)=>({padding:"8px 12px",borderRadius:999,border:"1px solid #2a425f",cursor:"pointer",
-               background:on?"#1d2a4a":"transparent",color:"#a7f3d0"}),
-  bar:{display:"flex",justifyContent:"space-between",alignItems:"center"},
-  card:{background:"#0f172a",border:"1px solid #1d2a4a",borderRadius:12},
-  body:{padding:12},
-  counter:{fontSize:13,color:"#93c5fd"}
-};
-
-const LS = {
-  players: "tm_players_v2",
-  teams:   "tm_current_teams_v2",
-  sessions:"tm_sessions_v2",
-  ui:      "tm_ui_v2",
-};
-
-export default function App(){
-  const [tab,setTab]=useState("players");
-
-  // שחקנים
-  const [players,setPlayers]=useState(()=>{
-    const s=localStorage.getItem(LS.players);
-    if(s) try{return JSON.parse(s)}catch{}
-    return [];
-  });
-  useEffect(()=>localStorage.setItem(LS.players,JSON.stringify(players)),[players]);
-
-  // כוחות נוכחיים
-  const [teams,setTeams]=useState(()=>{
-    const s=localStorage.getItem(LS.teams);
-    if(s) try{return JSON.parse(s)}catch{}
-    return [];
-  });
-  useEffect(()=>localStorage.setItem(LS.teams,JSON.stringify(teams)),[teams]);
-
-  // מחזורים (טיוטות+מפורסמים)
-  const [sessions,setSessions]=useState(()=>{
-    const s=localStorage.getItem(LS.sessions);
-    if(s) try{return JSON.parse(s)}catch{}
-    return [];
-  });
-  useEffect(()=>localStorage.setItem(LS.sessions,JSON.stringify(sessions)),[sessions]);
-
-  // UI קטן
-  const [ui,setUi]=useState(()=>{
-    const s=localStorage.getItem(LS.ui);
-    if(s) try{return JSON.parse(s)}catch{}
-    return {showRatings:true};
-  });
-  useEffect(()=>localStorage.setItem(LS.ui,JSON.stringify(ui)),[ui]);
-
-  const ctx = useMemo(()=>({
-    players,setPlayers,
-    teams,setTeams,
-    sessions,setSessions,
-    ui,setUi
-  }),[players,teams,sessions,ui]);
-
+export default function App() {
   return (
-    <div style={css.page}>
-      <div style={css.wrap}>
-        <h1 style={css.title}>קטרגל גן-דניאל ⚽</h1>
+    <div dir="rtl" style={{minHeight:"100vh", background:"#0a101b", color:"#e8eefc"}}>
+      {/* Header */}
+      <header style={{maxWidth:1180, margin:"20px auto 12px", padding:"0 12px"}}>
+        <h1 style={{margin:0, fontSize:32, display:"flex", alignItems:"center", gap:10}}>
+          <span role="img" aria-label="soccer">⚽</span> קטרגל-גן דניאל
+        </h1>
+        <TopNav />
+      </header>
 
-        <nav style={css.tabs}>
-          <button style={css.pill(tab==="players")} onClick={()=>setTab("players")}>שחקנים</button>
-          <button style={css.pill(tab==="teams")}   onClick={()=>setTab("teams")}>עשה כוחות / מחזור</button>
-          <button style={css.pill(tab==="ranking")} onClick={()=>setTab("ranking")}>דירוג</button>
-          <button style={css.pill(tab==="admin")}   onClick={()=>setTab("admin")}>מנהל</button>
-        </nav>
+      {/* תוכן הדפים */}
+      <main style={{maxWidth:1180, margin:"0 auto 40px", padding:"0 12px"}}>
+        <Routes>
+          {/* דף ברירת מחדל → שחקנים */}
+          <Route path="/" element={<Navigate to="/players" replace />} />
+          <Route path="/players" element={<Players />} />
+          <Route path="/round"   element={<DoForces />} />
+          {/* ליתר ביטחון: לא נמצא */}
+          <Route path="*" element={<Navigate to="/players" replace />} />
+        </Routes>
+      </main>
 
-        <AppCtx.Provider value={ctx}>
-          {tab==="players" && <PlayersPage />}
-          {tab==="teams"   && <TeamsPage />}
-          {tab==="ranking" && <RankingPage />}
-          {tab==="admin"   && <AdminPage />}
-        </AppCtx.Provider>
-      </div>
+      {/* סטייל בסיסי לכפתורים/טאבים (כהה-ירוק כפי שביקשת) */}
+      <style>{`
+        .btn{padding:7px 12px;border-radius:999px;border:1px solid #1e3b2f;background:#0e201a;color:#e8eefc;cursor:pointer}
+        .btn:hover{filter:brightness(1.08)}
+        .btn.primary{background:#1f6f43;border-color:#1f6f43}
+        .btn.danger{background:#ff5c7a;border-color:#ff5c7a;color:white}
+        .chip{background:#0f1a2e;border:1px solid #24324a;color:#e8eefc;border-radius:999px;padding:6px 10px}
+
+        /* ניווט עליון */
+        .tabs{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+        .tab{padding:8px 14px;border-radius:999px;border:1px solid #1e3b2f;background:#0e201a;color:#e8eefc;text-decoration:none}
+        .tab:hover{filter:brightness(1.08)}
+        .tab.active{background:#1f6f43;border-color:#1f6f43}
+        input, select{background:#0b1220;color:#e8eefc;border:1px solid #24324a;border-radius:10px;padding:6px}
+        .card{background:#0f1a2e;border:1px solid #24324a;border-radius:16px;padding:12px}
+      `}</style>
     </div>
   );
 }
