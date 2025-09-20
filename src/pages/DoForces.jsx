@@ -1,234 +1,298 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { loadPlayers } from "../store/playerStorage";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { generateTeams, checkTeamSizePolicy, buildMustUnits, violatesAvoidWith } from "../logic/balance";
 
-// עזר
-const sum = (arr) => arr.reduce((s, x) => s + (Number(x) || 0), 0);
-const byRatingDesc = (a, b) => (b.rating || 0) - (a.rating || 0);
+/**
+ * DoForces.jsx — v3.3 (KATREGEL GAN DANIEL)
+ *
+ * תואם דרישות "עשה כוחות / מחזור":
+ * • כרטיסי הקבוצות למעלה; הטבלה למטה.
+ * • בכל כרטיס: "קבוצה X", ממוצע, סכ"כ, מספר שחקנים.
+ * • "הסתר ציונים" מחביא ציונים בכרטיסים בלבד (הטבלה נשארת עם ציונים).
+ * • Drag & Drop בין קבוצות וגם החזרה לטבלה.
+ * • איזון גדלים: מותר רק ±1. גרירה שיוצרת חריגה—נחסמת ומופיעה אזהרה.
+ * • "חייב-עם": האלגוריתם מכבד. אם יחידה גדולה מגודל יעד—הודעת שגיאה. גרירה שמפרקת יחידה—אזהרה (לא חסימה).
+ * • "עשה כוחות" יוצר חלוקה חדשה בכל לחיצה.
+ * • "שמור מחזור" שומר טיוטה ב-localStorage ('draftCycles').
+ *
+ * הקומפוננטה עומדת לבד, אך אם יש לכם מקור שחקנים אחר (API/Store),
+ * החליפו את loadPlayers()/savePlayers() בהתאם. כרגע יש דיפולט/localStorage("players").
+ */
+
+const clamp = (n, a, b) => Math.max(a, Math.min(b, n)));
+const sum = (arr, sel = (x) => x) => arr.reduce((s, x) => s + sel(x), 0);
+const avg = (arr, sel = (x) => x) => (arr.length ? +(sum(arr, sel) / arr.length).toFixed(2) : 0);
+
+const DEFAULT_PLAYERS = [
+  { id: "1",  name: "אופיר",        pos: "MF", rating: 9,   playing: true, mustWith: [],          avoidWith: [] },
+  { id: "2",  name: "פייביש",       pos: "MF", rating: 9.5, playing: true, mustWith: [],          avoidWith: [] },
+  { id: "3",  name: "מקסים",        pos: "DF", rating: 6.5, playing: true, mustWith: [],          avoidWith: [] },
+  { id: "4",  name: "אייטני-סאם",   pos: "FW", rating: 8.5, playing: true, mustWith: ["מיכה"],    avoidWith: [] },
+  { id: "5",  name: "עזי עפרני",    pos: "MF", rating: 8,   playing: true, mustWith: [],          avoidWith: [] },
+  { id: "6",  name: "מיכה",         pos: "FW", rating: 8,   playing: true, mustWith: ["אייטני-סאם"], avoidWith: [] },
+  { id: "7",  name: "יוסי תלתלים",  pos: "MF", rating: 7.5, playing: true, mustWith: [],          avoidWith: [] },
+  { id: "8",  name: "גילי",         pos: "DF", rating: 7,   playing: true, mustWith: [],          avoidWith: ["אלדד"] },
+  { id: "9",  name: "עופר",         pos: "DF", rating: 6.5, playing: true, mustWith: [],          avoidWith: [] },
+  { id: "10", name: "אלדד",         pos: "FW", rating: 3,   playing: true, mustWith: [],          avoidWith: ["גילי"] },
+];
+
+function loadPlayers() {
+  try {
+    const raw = localStorage.getItem("players");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length) return parsed;
+    }
+  } catch {}
+  return DEFAULT_PLAYERS;
+}
+function savePlayers(players) {
+  try { localStorage.setItem("players", JSON.stringify(players)); } catch {}
+}
 
 export default function DoForces() {
-  const [players, setPlayers] = useState([]);
-  const [teamsCount, setTeamsCount] = useState(4);
-  const [hideScoresInCards, setHideScoresInCards] = useState(false);
+  const [players, setPlayers] = useState(loadPlayers());
+  const [teamCount, setTeamCount] = useState(4);
+  const [teams, setTeams]       = useState(() => Array.from({ length: 4 }, () => []));
+  const [hideCardRatings, setHideCardRatings] = useState(false);
+  const [toast, setToast] = useState(null); // {type:'warn'|'err'|'ok', msg}
 
-  // מצב שיבוץ
-  const [assign, setAssign] = useState({}); // {playerId: teamIdx}
-  const [teams, setTeams] = useState([]);   // [{name, ids:number[]}]
-  const [drag, setDrag] = useState(null);   // {id, fromTeam}
+  useEffect(() => { savePlayers(players); }, [players]);
 
-  useEffect(() => { setPlayers(loadPlayers()); }, []);
-  const active   = useMemo(() => players.filter(p => !!p.active), [players]);
-  const inactive = useMemo(() => players.filter(p => !p.active), [players]);
+  const activePlayers = useMemo(() => players.filter(p => p.playing), [players]);
+  const assignedCount = sum(teams, t => t.length);
 
-  // יצירה – מכבד "חייב-עם", איזון ±1
-  function buildTeams() {
-    if (active.length === 0) { alert("אין שחקנים פעילים."); return; }
-    const n = Math.max(2, Math.min(12, Number(teamsCount) || 4));
+  // ===== Toast =====
+  function openToast(type, msg) {
+    setToast({ type, msg });
+    window.clearTimeout(openToast._t);
+    openToast._t = window.setTimeout(() => setToast(null), 2400);
+  }
 
-    // גרף "חייב-עם"
-    const nameToId = new Map(active.map(p => [p.name, p.id]));
-    const adj = new Map(active.map(p => [p.id, new Set()]));
-    active.forEach(p => (p.mustWith || []).forEach(nm => {
-      const j = nameToId.get(nm);
-      if (j) { adj.get(p.id).add(j); adj.get(j).add(p.id); }
-    }));
+  // ===== Drag & Drop =====
+  const dragRef = useRef({ playerId: null, fromTeamIdx: null });
+  function findPlayerById(id) { return players.find(p => String(p.id) === String(id)); }
+  function handleDragStart(e, playerId, fromTeamIdx) {
+    dragRef.current = { playerId, fromTeamIdx };
+    e.dataTransfer.effectAllowed = "move";
+  }
+  function handleDragOver(e) { e.preventDefault(); }
 
-    // יחידות (רכיבי קישוריות)
-    const visited = new Set(); const units = [];
-    for (const p of active) {
-      if (visited.has(p.id)) continue;
-      const q = [p.id]; visited.add(p.id); const comp = [p.id];
-      while (q.length) {
-        const v = q.pop();
-        for (const nb of adj.get(v) || []) if (!visited.has(nb)) {
-          visited.add(nb); q.push(nb); comp.push(nb);
-        }
-      }
-      units.push(comp);
-    }
+  function dropToTeam(targetTeamIdx) {
+    const { playerId } = dragRef.current; if (!playerId) return;
+    const player = findPlayerById(playerId); if (!player) return;
 
-    // ולידציה מול גודל יעד
-    const target = Math.floor(active.length / n);
-    const maxAllowed = target + 1;
-    if (units.some(u => u.length > maxAllowed)) {
-      alert("אי אפשר ליצור כוחות חוקיים: יחידת 'חייב-עם' גדולה מדי עבור גודל קבוצה.");
+    // לא-עם: חוסם
+    if (violatesAvoidWith(teams[targetTeamIdx], player)) {
+      openToast("warn", "הגרירה נחסמה: קיימת התנגשות 'לא-עם' בקבוצה היעד");
       return;
     }
 
-    const idToPlayer = new Map(active.map(p => [p.id, p]));
-    const unitRating = (u) => sum(u.map(id => idToPlayer.get(id)?.rating || 0)) / u.length;
-    units.sort((a, b) => unitRating(b) - unitRating(a));
+    // בונים תמונת מצב חדשה לבדיקה
+    const nextTeams = teams.map(t => t.slice());
+    // מסירים את השחקן מכל הקבוצות
+    for (const t of nextTeams) {
+      const idx = t.findIndex(x => x.id === player.id);
+      if (idx !== -1) t.splice(idx, 1);
+    }
+    nextTeams[targetTeamIdx].push(player);
 
-    const buckets = Array.from({ length: n }, (_, i) => ({ name: `קבוצה ${i + 1}`, ids: [], sum: 0 }));
-    let i = 0, fwd = true;
-    for (const u of units) {
-      // בחירת יעד – נחש, ואם לא נכנס אז הקבוצה הדלה ביותר שמתאימה
-      let k = i;
-      if (buckets[i].ids.length + u.length > maxAllowed) {
-        let best = -1, bestAvg = Infinity;
-        for (let t = 0; t < buckets.length; t++) {
-          if (buckets[t].ids.length + u.length <= maxAllowed) {
-            const avg = buckets[t].sum / Math.max(1, buckets[t].ids.length);
-            if (avg < bestAvg) { best = t; bestAvg = avg; }
-          }
-        }
-        if (best >= 0) k = best;
-      }
-      buckets[k].ids.push(...u);
-      buckets[k].sum += sum(u.map(id => idToPlayer.get(id)?.rating || 0));
-      if (fwd) { if (i === n - 1) fwd = false; else i++; }
-      else { if (i === 0) fwd = true; else i--; }
+    // מדיניות גודל קבוצות (±1)
+    if (!checkTeamSizePolicy(nextTeams, activePlayers.length)) {
+      openToast("warn", "אסור לחרוג מאזון הגדלים (±1). הפעולה בוטלה");
+      return;
     }
 
-    const map = {}; buckets.forEach((b, idx) => b.ids.forEach(id => map[id] = idx));
-    setAssign(map);
-    setTeams(buckets);
-  }
+    // אזהרת פירוק יחידת חייב-עם (לא חסימה)
+    const unitOf = buildMustUnits(activePlayers).find(u => u.some(x => x.id === player.id));
+    if (unitOf) {
+      // האם כל חברי היחידה עדיין יחד?
+      const firstTeamIdx = nextTeams.findIndex(t => t.some(x => x.id === unitOf[0].id));
+      const stillTogether = firstTeamIdx !== -1 && unitOf.every(m => nextTeams[firstTeamIdx].some(x => x.id === m.id));
+      if (!stillTogether) openToast("warn", "זהירות: פירקת יחידת 'חייב-עם'");
+    }
 
-  // סטטוס קבוצה
-  function teamStat(t) {
-    const plist = t.ids.map(id => active.find(p => p.id === id)).filter(Boolean);
-    const scores = plist.map(p => Number(p.rating) || 0);
-    return { count: plist.length, sum: sum(scores), avg: plist.length ? sum(scores) / plist.length : 0, players: plist.sort(byRatingDesc) };
-  }
-
-  // איזון אחרי גרירה
-  function isBalancedAfterMove(fromIdx, toIdx) {
-    if (fromIdx === toIdx) return true;
-    const sizes = teams.map(t => t.ids.length);
-    if (fromIdx >= 0) sizes[fromIdx] -= 1;
-    if (toIdx >= 0) sizes[toIdx] += 1;
-    return Math.max(...sizes) - Math.min(...sizes) <= 1;
-  }
-
-  // DnD
-  function onDragStart(e, id, fromTeam) { setDrag({ id, fromTeam }); e.dataTransfer.effectAllowed = "move"; }
-  function onDragOver(e, teamIdx) { if (!drag) return; if (!isBalancedAfterMove(drag.fromTeam, teamIdx)) return; e.preventDefault(); }
-  function onDrop(e, teamIdx) {
-    e.preventDefault();
-    if (!drag) return;
-    if (!isBalancedAfterMove(drag.fromTeam, teamIdx)) { alert("אי אפשר: חייבים לשמור על הבדל גודל עד שחקן אחד."); setDrag(null); return; }
-    const id = drag.id;
-    const nextTeams = teams.map(t => ({ ...t, ids: [...t.ids] }));
-    if (drag.fromTeam >= 0) nextTeams[drag.fromTeam].ids = nextTeams[drag.fromTeam].ids.filter(x => x !== id);
-    nextTeams[teamIdx].ids.push(id);
-    setAssign({ ...assign, [id]: teamIdx });
     setTeams(nextTeams);
-    setDrag(null);
+  }
+  function handleDropOnTeam(e, idx) { e.preventDefault(); dropToTeam(idx); dragRef.current = { playerId: null, fromTeamIdx: null }; }
+  function handleDropBackToPool(e) {
+    e.preventDefault();
+    const { playerId } = dragRef.current; if (!playerId) return;
+    const next = teams.map(t => t.filter(x => x.id !== playerId));
+    setTeams(next);
+    dragRef.current = { playerId: null, fromTeamIdx: null };
   }
 
-  const assignedCount = useMemo(() => Object.values(assign).filter(v => v >= 0).length, [assign]);
+  // ===== פעולות ראשיות =====
+  function doMakeTeams() {
+    try {
+      const newTeams = generateTeams(players, teamCount); // יוצר חלוקה חדשה בכל לחיצה
+      setTeams(newTeams);
+      openToast("ok", "נוצרה חלוקה חדשה");
+    } catch (e) {
+      openToast("err", e.message || "כשל ביצירת קבוצות");
+    }
+  }
 
-  function saveDraft() {
-    if (teams.length === 0) { alert("אין קבוצות לשמירה."); return; }
-    const idToPlayer = new Map(players.map(p => [p.id, p]));
+  function saveDraftCycle() {
     const payload = {
-      ts: Date.now(),
-      teams: teams.map(t => ({
-        name: t.name,
-        players: t.ids.map(id => {
-          const p = idToPlayer.get(id);
-          return { id, name: p?.name, pos: p?.pos, rating: p?.rating };
-        })
-      })),
-      totals: { active: active.length, teamsCount: teams.length }
+      id: Date.now().toString(36),
+      ts: new Date().toISOString(),
+      teamCount,
+      playersActive: activePlayers.length,
+      playersAssigned: assignedCount,
+      teams: teams.map(t => t.map(p => ({ id: p.id, name: p.name, pos: p.pos, rating: p.rating }))),
     };
-    const KEY = "katregel.roundDrafts.v1";
-    const arr = JSON.parse(localStorage.getItem(KEY) || "[]");
-    arr.unshift(payload);
-    localStorage.setItem(KEY, JSON.stringify(arr));
-    alert("הטיוטה נשמרה. ראה 'מנהל'.");
+    try {
+      const raw = localStorage.getItem("draftCycles");
+      const arr = raw ? JSON.parse(raw) : [];
+      arr.unshift(payload);
+      localStorage.setItem("draftCycles", JSON.stringify(arr));
+      openToast("ok", "הטיוטה נשמרה (מסך מנהל)");
+    } catch {
+      openToast("err", "שגיאה בשמירה");
+    }
   }
+
+  // ===== טבלת שחקנים (כמו במסך “שחקנים”) =====
+  const [sortKey, setSortKey] = useState("name");
+  const [sortDir, setSortDir] = useState("asc");
+  const [nameFilter, setNameFilter] = useState("");
+
+  const tablePlayers = useMemo(() => {
+    const rows = players
+      .filter(p => p.name.toLowerCase().includes(nameFilter.trim().toLowerCase()))
+      .slice();
+    const dir = sortDir === "asc" ? 1 : -1;
+    rows.sort((a, b) => {
+      let A = a[sortKey]; let B = b[sortKey];
+      if (typeof A === "string") A = A.toLowerCase();
+      if (typeof B === "string") B = B.toLowerCase();
+      if (A < B) return -1 * dir; if (A > B) return 1 * dir; return 0;
+    });
+    return rows;
+  }, [players, sortKey, sortDir, nameFilter]);
+
+  function toggleSort(k) { if (k === sortKey) setSortDir(d => d === "asc" ? "desc" : "asc"); else { setSortKey(k); setSortDir("asc"); } }
+  function togglePlaying(id) { setPlayers(ps => ps.map(p => (p.id === id ? { ...p, playing: !p.playing } : p))); }
+  function onEditRating(id, v) { const num = clamp(parseFloat(v) || 0, 0, 10); setPlayers(ps => ps.map(p => (p.id === id ? { ...p, rating: num } : p))); }
+  function onEditPos(id, pos)   { setPlayers(ps => ps.map(p => (p.id === id ? { ...p, pos } : p))); }
+  function onDelete(id)         { setPlayers(ps => ps.filter(p => p.id !== id)); }
+
+  // סטטיסטיקות כרטיסים
+  const teamStats = teams.map(t => ({ avg: avg(t, x => x.rating), sum: +sum(t, x => x.rating).toFixed(1), count: t.length }));
 
   return (
-    <div dir="rtl" style={{maxWidth:1180, margin:"0 auto"}}>
-      {/* סרגל עליון */}
-      <div style={{display:"flex", gap:12, alignItems:"center", flexWrap:"wrap", marginBottom:10}}>
-        <div className="chip">פעילים: <b>{active.length}</b></div>
-        <div className="chip">משובצים: <b>{assignedCount}</b></div>
-        <div className="chip">לא פעילים: <b>{inactive.length}</b></div>
-        <div style={{flex:1}} />
-        <label style={{display:"inline-flex", alignItems:"center", gap:8}}>
-          מס׳ קבוצות
-          <input type="number" min="2" max="12" value={teamsCount} onChange={e=>setTeamsCount(e.target.value)} style={{width:64}} />
-        </label>
-        <label style={{display:"inline-flex", alignItems:"center", gap:6}}>
-          הסתר ציונים (בכרטיסים בלבד)
-          <input type="checkbox" checked={hideScoresInCards} onChange={e=>setHideScoresInCards(e.target.checked)} />
-        </label>
-        <button className="btn" onClick={buildTeams}>עשה כוחות</button>
-        <button className="btn primary" onClick={saveDraft}>שמור מחזור (טיוטה)</button>
+    <div className="page mx-auto px-3" dir="rtl">
+      {/* פס עליון: שמאל—מונים; ימין—כפתורים */}
+      <div className="flex items-center justify-between mt-4 mb-3">
+        <div className="flex items-center gap-4 text-sm text-slate-300">
+          <div>פעילים: <b>{activePlayers.length}</b></div>
+          <div>משובצים: <b>{assignedCount}</b></div>
+          <div className="flex items-center gap-2">
+            <label>מס׳ קבוצות</label>
+            <input type="number" min={2} max={8} value={teamCount}
+              onChange={e => setTeamCount(clamp(+e.target.value || 2, 2, 8))}
+              className="w-16 rounded-md bg-[#0f1a2e] text-white border border-[#24324a] px-2 py-1" />
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button onClick={() => setHideCardRatings(v => !v)}
+            className="rounded-xl border border-[#24324a] bg-[#0f1a2e] hover:bg-[#182544] px-3 py-2 text-sm">
+            {hideCardRatings ? "הצג ציונים (בכרטיסים)" : "הסתר ציונים (בכרטיסים בלבד)"}
+          </button>
+          <button onClick={doMakeTeams}
+            className="rounded-xl bg-green-600 hover:bg-green-700 px-3 py-2 text-sm text-white shadow">עשה כוחות</button>
+          <button onClick={saveDraftCycle}
+            className="rounded-xl bg-slate-600 hover:bg-slate-700 px-3 py-2 text-sm text-white">שמור מחזור (טיוטה)</button>
+        </div>
       </div>
 
-      {/* כרטיסי קבוצות – למעלה */}
-      {teams.length > 0 && (
-        <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))", gap:12, marginBottom:12}}>
-          {teams.map((t, idx) => {
-            const stat = teamStat(t);
-            return (
-              <div key={idx}
-                   onDragOver={e=>onDragOver(e, idx)}
-                   onDrop={e=>onDrop(e, idx)}
-                   className="card"
-                   style={{minHeight:190}}>
-                <div style={{display:"flex", justifyContent:"space-between", marginBottom:6}}>
-                  <b>{t.name}</b>
-                  <span style={{color:"#9fb0cb"}}>
-                    {stat.players.length} שחקנים | סכ״ר {stat.sum.toFixed(1)} | ממוצע {stat.avg.toFixed(2)}
-                  </span>
-                </div>
-                <ul style={{listStyle:"none", padding:0, margin:0}}>
-                  {stat.players.map(p=>(
-                    <li key={p.id}
-                        draggable
-                        onDragStart={e=>onDragStart(e, p.id, assign[p.id] ?? idx)}
-                        style={{display:"flex", justifyContent:"space-between", padding:"4px 0", borderTop:"1px dashed #24324a", cursor:"grab"}}>
-                      <span>{p.name} ({p.pos})</span>
-                      {!hideScoresInCards && <span>{p.rating}</span>}
-                    </li>
-                  ))}
-                  {stat.players.length===0 && <li style={{opacity:.7}}>גררו לכאן שחקנים…</li>}
-                </ul>
-              </div>
-            );
-          })}
-        </div>
-      )}
+      {/* כרטיסי קבוצות */}
+      <div className="grid md:grid-cols-4 sm:grid-cols-2 grid-cols-1 gap-3 mb-4">
+        {teams.map((team, idx) => (
+          <div key={idx}
+               className="rounded-2xl border border-[#24324a] bg-[#0f1a2e] p-3"
+               onDragOver={handleDragOver}
+               onDrop={e => handleDropOnTeam(e, idx)}>
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-slate-200 font-medium">קבוצה {idx + 1}</div>
+              <div className="text-xs text-slate-300">ממוצע {teamStats[idx].avg} | סכ\"כ {teamStats[idx].sum} | {teamStats[idx].count} שחקנים</div>
+            </div>
+            <ul className="space-y-1 min-h-[120px]">
+              {team.map(p => (
+                <li key={p.id}
+                    className="rounded-lg px-3 py-2 bg-[#101b31] border border-[#24324a] cursor-move flex items-center justify-between"
+                    draggable onDragStart={(e) => handleDragStart(e, p.id, idx)}>
+                  <span>{p.name} <span className="text-xs text-slate-400">({p.pos})</span></span>
+                  {!hideCardRatings && <span className="text-sm text-slate-300">{p.rating}</span>}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
 
-      {/* טבלת שחקנים – למטה (כמו במסך שחקנים) */}
-      <div className="card" style={{marginTop:12}}>
-        <div style={{maxHeight:"50vh", overflow:"auto"}}>
-          <table style={{width:"100%", borderCollapse:"separate", borderSpacing:0}}>
-            <thead>
-              <tr style={{position:"sticky", top:0, background:"#105340", color:"#e8eefc"}}>
-                <th style={th}>שם</th>
-                <th style={th}>עמדה</th>
-                <th style={th}>ציון</th>
+      {/* טבלת שחקנים (Pool) */}
+      <div className="rounded-2xl border border-[#24324a] bg-[#0f1a2e] overflow-hidden"
+           onDragOver={handleDragOver}
+           onDrop={handleDropBackToPool}>
+        <div className="flex items-center justify-between bg-[#183b2a] text-white py-2 px-3 text-sm">
+          <div>רשימת השחקנים</div>
+          <div className="flex items-center gap-2">
+            <input placeholder="חפש שם…" value={nameFilter} onChange={e => setNameFilter(e.target.value)}
+                   className="rounded-md bg-[#0f1a2e] text-white border border-[#24324a] px-2 py-1 text-xs w-40" />
+          </div>
+        </div>
+        <div className="max-h-[420px] overflow-auto">
+          <table className="w-full text-right">
+            <thead className="sticky top-0 bg-[#0f1a2e]">
+              <tr className="text-slate-300 text-sm">
+                <th className="py-2 px-3 w-28"><button onClick={() => toggleSort('rating')}>ציון</button></th>
+                <th className="py-2 px-3 w-24"><button onClick={() => toggleSort('pos')}>עמדה</button></th>
+                <th className="py-2 px-3"><button onClick={() => toggleSort('name')}>שם</button></th>
+                <th className="py-2 px-3 w-28">משחק?</th>
+                <th className="py-2 px-3 w-40">עריכה</th>
+                <th className="py-2 px-3 w-20">מחיקה</th>
               </tr>
             </thead>
             <tbody>
-              {active.sort(byRatingDesc).map(p=>{
-                const tidx = assign[p.id];
-                return (
-                  <tr key={p.id}
-                      draggable={teams.length>0}
-                      onDragStart={e=>onDragStart(e, p.id, tidx ?? -1)}
-                      style={{borderTop:"1px solid #24324a", cursor: teams.length>0 ? "grab" : "default"}}>
-                    <td style={td}>{p.name}</td>
-                    <td style={td}>{p.pos}</td>
-                    <td style={td}>{p.rating}</td>
-                  </tr>
-                );
-              })}
-              {active.length===0 && (
-                <tr><td colSpan={3} style={{padding:"18px", textAlign:"center", color:"#9fb0cb"}}>אין שחקנים פעילים.</td></tr>
-              )}
+              {tablePlayers.map(p => (
+                <tr key={p.id} className="border-t border-[#13213a] hover:bg-[#101b31] cursor-grab"
+                    draggable onDragStart={(e) => handleDragStart(e, p.id, null)}>
+                  <td className="py-2 px-3">{p.rating}</td>
+                  <td className="py-2 px-3">{p.pos}</td>
+                  <td className="py-2 px-3">{p.name}</td>
+                  <td className="py-2 px-3"><input type="checkbox" checked={!!p.playing} onChange={() => togglePlaying(p.id)} /></td>
+                  <td className="py-2 px-3">
+                    <div className="flex items-center gap-2 text-xs">
+                      <select value={p.pos} onChange={e => onEditPos(p.id, e.target.value)}
+                              className="bg-[#0f1a2e] border border-[#24324a] rounded px-2 py-1">
+                        <option>GK</option><option>DF</option><option>MF</option><option>FW</option>
+                      </select>
+                      <input type="number" step="0.5" min={0} max={10} defaultValue={p.rating}
+                             onBlur={e => onEditRating(p.id, e.target.value)}
+                             className="w-20 bg-[#0f1a2e] border border-[#24324a] rounded px-2 py-1" />
+                    </div>
+                  </td>
+                  <td className="py-2 px-3 text-center">
+                    <button onClick={() => onDelete(p.id)} className="text-red-400 hover:text-red-300 text-xs">מחק</button>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
+        <div className="text-xs text-slate-400 px-3 py-2">טיפ: גרור שחקן מתוך הטבלה אל אחת הקבוצות, או גרור שחקן מכרטיס קבוצה חזרה לטבלה כדי להסירו.</div>
       </div>
+
+      {toast && (
+        <div className={`fixed bottom-4 right-4 px-4 py-2 rounded-xl shadow text-sm ${
+          toast.type==='ok'?'bg-green-600 text-white':
+          toast.type==='warn'?'bg-yellow-600 text-white':'bg-red-600 text-white'}`}>
+          {toast.msg}
+        </div>
+      )}
     </div>
   );
 }
-
-const th = { padding: "10px 12px", textAlign: "right" };
-const td = { padding: "10px 12px", color: "#e8eefc" };
