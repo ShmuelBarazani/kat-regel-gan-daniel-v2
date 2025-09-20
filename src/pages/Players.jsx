@@ -1,11 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { loadPlayers, savePlayers, seedIfEmpty } from "../store/playerStorage";
 
-// עמודות: משחק? | שם | עמדה | ציון | חייב עם | לא עם | פעולות
 const POS_OPTIONS = ["GK","DF","MF","FW"];
 
 export default function Players() {
-  // טען/אתחל נתונים
   const [players, setPlayers] = useState([]);
   const [showActiveOnly, setShowActiveOnly] = useState(false);
   const [sort, setSort] = useState({ key: "name", dir: "asc" });
@@ -15,14 +13,14 @@ export default function Players() {
   const firstFocusRef = useRef(null);
 
   useEffect(() => {
-    seedIfEmpty();                  // מכניס רשימת ברירת מחדל אם אין כלום
-    setPlayers(loadPlayers());      // טוען מה־localStorage
+    (async () => {
+      const seeded = await seedIfEmpty();     // טוען מ-/players.json אם ריק
+      setPlayers(seeded.length ? seeded : loadPlayers());
+    })();
   }, []);
 
   useEffect(() => {
-    if (modalOpen && firstFocusRef.current) {
-      firstFocusRef.current.focus();
-    }
+    if (modalOpen && firstFocusRef.current) firstFocusRef.current.focus();
   }, [modalOpen]);
 
   const activeCount = useMemo(() => players.filter(p => !!p.active).length, [players]);
@@ -41,23 +39,11 @@ export default function Players() {
     return out;
   }, [players, showActiveOnly, sort]);
 
-  function norm(v){
-    if (v === undefined || v === null) return "";
-    if (typeof v === "string") return v.toLowerCase();
-    return v;
-  }
+  function norm(v){ if (v === undefined || v === null) return ""; return typeof v === "string" ? v.toLowerCase() : v; }
+  function blankForm(){ return { active:false, name:"", pos:"MF", rating:5, mustWith:[], avoidWith:[] }; }
 
-  function blankForm() {
-    return { active:false, name:"", pos:"MF", rating:5, mustWith:[], avoidWith:[] };
-  }
-
-  function openAdd() {
-    setEditIdx(null);
-    setForm(blankForm());
-    setModalOpen(true);
-  }
-
-  function openEdit(idx) {
+  function openAdd(){ setEditIdx(null); setForm(blankForm()); setModalOpen(true); }
+  function openEdit(idx){
     const p = data[idx];
     const origIndex = players.findIndex(x => x.id === p.id);
     setEditIdx(origIndex);
@@ -71,28 +57,14 @@ export default function Players() {
     });
     setModalOpen(true);
   }
-
-  function splitNames(v){
-    if (!v) return [];
-    if (Array.isArray(v)) return v;
-    return String(v).split(",").map(s=>s.trim()).filter(Boolean);
-  }
-
-  function joinNames(arr){
-    return (arr || []).join(", ");
-  }
+  function splitNames(v){ if (!v) return []; if (Array.isArray(v)) return v; return String(v).split(",").map(s=>s.trim()).filter(Boolean); }
+  function joinNames(arr){ return (arr || []).join(", "); }
 
   function onSaveForm(e){
     e?.preventDefault?.();
-    // ולידציה קצרה
-    if (!form.name.trim()) {
-      alert("שם שחקן נדרש");
-      return;
-    }
-    if (!POS_OPTIONS.includes(form.pos)) {
-      alert("עמדה לא תקפה");
-      return;
-    }
+    if (!form.name.trim()) return alert("שם שחקן נדרש");
+    if (!POS_OPTIONS.includes(form.pos)) return alert("עמדה לא תקפה");
+
     const record = {
       id: editIdx === null ? cryptoId() : players[editIdx].id,
       active: !!form.active,
@@ -102,50 +74,19 @@ export default function Players() {
       mustWith: splitNames(form.mustWith),
       avoidWith: splitNames(form.avoidWith),
     };
-    let next = [...players];
-    if (editIdx === null) next.push(record);
-    else next[editIdx] = record;
-
-    setPlayers(next);
-    savePlayers(next);
-    setModalOpen(false);
+    const next = [...players];
+    if (editIdx === null) next.push(record); else next[editIdx] = record;
+    setPlayers(next); savePlayers(next); setModalOpen(false);
   }
+  function cryptoId(){ return (window.crypto?.randomUUID?.() || "id_" + Math.random().toString(36).slice(2)); }
+  function removeById(id){ if (!confirm("למחוק את השחקן?")) return; const next = players.filter(p => p.id !== id); setPlayers(next); savePlayers(next); }
+  function toggleActive(id){ const next = players.map(p => p.id===id ? {...p, active:!p.active} : p); setPlayers(next); savePlayers(next); }
+  function setSortCol(key){ setSort(prev => prev.key === key ? ({ key, dir: prev.dir==="asc"?"desc":"asc" }) : ({ key, dir:"asc" })); }
 
-  function cryptoId(){
-    // מזהה יציב
-    return (window.crypto?.randomUUID?.() || "id_" + Math.random().toString(36).slice(2));
-  }
-
-  function removeById(id){
-    if (!confirm("למחוק את השחקן?")) return;
-    const next = players.filter(p => p.id !== id);
-    setPlayers(next);
-    savePlayers(next);
-  }
-
-  function toggleActive(id){
-    const next = players.map(p => p.id===id ? {...p, active:!p.active} : p);
-    setPlayers(next);
-    savePlayers(next);
-  }
-
-  function setSortCol(key){
-    setSort(prev => prev.key === key ? ({ key, dir: prev.dir==="asc"?"desc":"asc" }) : ({ key, dir:"asc" }));
-  }
-
-  // סגנון בסיסי + טבלה גלילה עם כותרות sticky
   return (
     <div className="page" dir="rtl" style={{maxWidth:1180, margin:"24px auto", padding:"0 12px"}}>
-      <HeaderBar
-        activeCount={activeCount}
-        showActiveOnly={showActiveOnly}
-        setShowActiveOnly={setShowActiveOnly}
-        onAdd={openAdd}
-      />
-
-      <div className="card" style={{
-        background:"#0f1a2e", border:"1px solid #24324a", borderRadius:16, padding:12
-      }}>
+      <HeaderBar activeCount={activeCount} showActiveOnly={showActiveOnly} setShowActiveOnly={setShowActiveOnly} onAdd={openAdd} />
+      <div className="card" style={{background:"#0f1a2e", border:"1px solid #24324a", borderRadius:16, padding:12}}>
         <div style={{maxHeight:"64vh", overflow:"auto"}}>
           <table style={{width:"100%", borderCollapse:"separate", borderSpacing:0, direction:"rtl"}}>
             <thead>
@@ -161,22 +102,11 @@ export default function Players() {
             </thead>
             <tbody>
               {data.length === 0 && (
-                <tr>
-                  <td colSpan={7} style={{padding:"28px 12px", textAlign:"center", color:"#9fb0cb"}}>
-                    אין שחקנים לתצוגה.
-                  </td>
-                </tr>
+                <tr><td colSpan={7} style={{padding:"28px 12px", textAlign:"center", color:"#9fb0cb"}}>אין שחקנים לתצוגה.</td></tr>
               )}
               {data.map((p, idx) => (
                 <tr key={p.id} style={{borderTop:"1px solid #24324a"}}>
-                  <td style={cellStyle}>
-                    <input
-                      type="checkbox"
-                      checked={!!p.active}
-                      onChange={()=>toggleActive(p.id)}
-                      aria-label={`שנה מצב משחק עבור ${p.name}`}
-                    />
-                  </td>
+                  <td style={cellStyle}><input type="checkbox" checked={!!p.active} onChange={()=>toggleActive(p.id)} /></td>
                   <td style={cellStyle}>{p.name}</td>
                   <td style={cellStyle}>{p.pos}</td>
                   <td style={cellStyle}>{p.rating}</td>
@@ -199,40 +129,20 @@ export default function Players() {
             <h3 style={{margin:"0 0 12px"}}>{editIdx===null ? "הוסף שחקן" : "ערוך שחקן"}</h3>
             <form onSubmit={onSaveForm}>
               <div className="grid" style={{display:"grid", gridTemplateColumns:"120px 1fr", gap:10, alignItems:"center"}}>
-                <label>משחק?</label>
-                <input type="checkbox" checked={form.active} onChange={e=>setForm(f=>({ ...f, active:e.target.checked }))} />
-
-                <label>שם</label>
-                <input ref={firstFocusRef} type="text" value={form.name} onChange={e=>setForm(f=>({ ...f, name:e.target.value }))} placeholder="שם שחקן" />
-
+                <label>משחק?</label><input type="checkbox" checked={form.active} onChange={e=>setForm(f=>({ ...f, active:e.target.checked }))} />
+                <label>שם</label><input ref={firstFocusRef} type="text" value={form.name} onChange={e=>setForm(f=>({ ...f, name:e.target.value }))} placeholder="שם שחקן" />
                 <label>עמדה</label>
-                <select value={form.pos} onChange={e=>setForm(f=>({ ...f, pos:e.target.value }))}>
-                  {POS_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-                </select>
-
-                <label>ציון</label>
-                <input type="number" step="0.5" min="1" max="10" value={form.rating}
-                       onChange={e=>setForm(f=>({ ...f, rating:e.target.value }))} />
-
-                <label>חייב עם</label>
-                <input type="text" value={Array.isArray(form.mustWith)?form.mustWith.join(", "):form.mustWith||""}
-                       onChange={e=>setForm(f=>({ ...f, mustWith:e.target.value }))} placeholder="שמות מופרדים בפסיקים" />
-
-                <label>לא עם</label>
-                <input type="text" value={Array.isArray(form.avoidWith)?form.avoidWith.join(", "):form.avoidWith||""}
-                       onChange={e=>setForm(f=>({ ...f, avoidWith:e.target.value }))} placeholder="שמות מופרדים בפסיקים" />
+                <select value={form.pos} onChange={e=>setForm(f=>({ ...f, pos:e.target.value }))}>{POS_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}</select>
+                <label>ציון</label><input type="number" step="0.5" min="1" max="10" value={form.rating} onChange={e=>setForm(f=>({ ...f, rating:e.target.value }))} />
+                <label>חייב עם</label><input type="text" value={Array.isArray(form.mustWith)?form.mustWith.join(", "):form.mustWith||""} onChange={e=>setForm(f=>({ ...f, mustWith:e.target.value }))} placeholder="שמות מופרדים בפסיקים" />
+                <label>לא עם</label><input type="text" value={Array.isArray(form.avoidWith)?form.avoidWith.join(", "):form.avoidWith||""} onChange={e=>setForm(f=>({ ...f, avoidWith:e.target.value }))} placeholder="שמות מופרדים בפסיקים" />
               </div>
-
-              <div style={{marginTop:16, display:"flex", gap:8, justifyContent:"flex-start"}}>
-                <button type="submit" className="btn primary">שמור</button>
-                <button type="button" className="btn ghost" onClick={()=>setModalOpen(false)}>בטל</button>
-              </div>
+              <div style={{marginTop:16, display:"flex", gap:8}}><button type="submit" className="btn primary">שמור</button><button type="button" className="btn ghost" onClick={()=>setModalOpen(false)}>בטל</button></div>
             </form>
           </div>
         </div>
       )}
 
-      {/* סגנון כפתורים קטן */}
       <style>{`
         .btn{padding:6px 10px;border-radius:10px;border:1px solid #24324a;background:#0b1220;color:#e8eefc;cursor:pointer}
         .btn:hover{filter:brightness(1.1)}
@@ -263,17 +173,13 @@ function HeaderBar({ activeCount, showActiveOnly, setShowActiveOnly, onAdd }){
 
 function Th({ children, onClick, sorted, dir }){
   return (
-    <th onClick={onClick} style={{
-      position:"sticky", top:0, background:"#105340", color:"#e8eefc",
-      padding:"10px 12px", textAlign:"right", cursor:onClick?"pointer":"default",
-      borderBottom:"1px solid #24324a"
-    }}>
+    <th onClick={onClick} style={{position:"sticky", top:0, background:"#105340", color:"#e8eefc",
+      padding:"10px 12px", textAlign:"right", cursor:onClick?"pointer":"default", borderBottom:"1px solid #24324a"}}>
       <span>{children}</span>{sorted ? (dir==="asc" ? " ▲" : " ▼") : ""}
     </th>
   );
 }
 
 const cellStyle = { padding:"10px 12px", verticalAlign:"middle", color:"#e8eefc" };
-
-const modalWrap = {
-  position:"fixed", inset:0, background:"rgba(0,0,0,.5)", display:"grid", placeItems
+const modalWrap = { position:"fixed", inset:0, background:"rgba(0,0,0,.5)", display:"grid", placeItems:"center", zIndex:1000 };
+const modalCard = { width:520, maxWidth:"92vw", background:"#0f1a2e", border:"1px solid #24324a", borderRadius:16, padding:16, color:"#e8eefc" };
