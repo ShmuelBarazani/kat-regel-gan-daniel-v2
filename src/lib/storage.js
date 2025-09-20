@@ -16,15 +16,14 @@ export const saveJSON = (key, value) => {
   } catch {}
 };
 
-// ה־hook שביקשת: useStorage – יצוא בשם הזה כדי ש-Teams.jsx יוכל לייבא אותו
+// hook נפוץ לשמירה/טעינה אוטומטית
 export const useStorage = (key, initialValue) => {
   const [value, setValue] = useState(() => loadJSON(key, initialValue));
   useEffect(() => { saveJSON(key, value); }, [key, value]);
   return [value, setValue];
 };
 
-// מפתחות שימושיים (לא חובה, רק לנוחות)
 export const STORAGE_KEYS = {
-  LAST_TEAMS: "katregel_last_teams_v2",
-  PLAYERS: "katregel_players_v2",
+  LAST_TEAMS: "katregel_last_teams_v2",   // מחזור אחרון שנשמר
+  PLAYERS: "katregel_players_v2",         // אם תרצה לשמור רשימת שחקנים ערוכה
 };
