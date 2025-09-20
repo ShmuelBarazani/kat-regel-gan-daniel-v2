@@ -1,126 +1,117 @@
-// יוטיל
-export const avg = (arr=[]) => (arr.length?arr.reduce((s,x)=>s+x,0)/arr.length:0);
-const clamp = (n,a,b) => Math.max(a,Math.min(b,n));
-const rdm = () => Math.random();
+// logic/balance.js — v3.3 (KATREGEL GAN DANIEL)
 
-// חלוקה לקומפוננטים של "חייב-עם" (דו-כיווני)
-function componentsWithMust(players){
-  const id2i=new Map(players.map((p,i)=>[p.id,i]));
-  const parent = players.map((_,i)=>i);
-  const find = x => parent[x]===x?x:(parent[x]=find(parent[x]));
-  const unite = (a,b)=>{a=find(a);b=find(b);if(a!==b) parent[Math.max(a,b)]=Math.min(a,b);};
+// עזרי חישוב
+const sum = (arr, sel = (x) => x) => arr.reduce((s, x) => s + sel(x), 0);
 
-  players.forEach((p,i)=>{
-    const two = new Set([...(p.prefer||[])]);
-    players.forEach(q=>{ if((q.prefer||[]).includes(p.id)) two.add(q.id); });
-    two.forEach(id => id2i.has(id)&&unite(i,id2i.get(id)));
-  });
-
-  const by=new Map();
-  players.forEach((p,i)=>{const r=find(i); if(!by.has(r)) by.set(r,[]); by.get(r).push(p)});
-  return [...by.values()];
+// ערבוב לקבלת חלוקה שונה בכל לחיצה
+function shuffle(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
 }
 
-// בדיקת קונפליקטים "לא-עם"
-const makeAvoidMap = ps => new Map(ps.map(p=>[p.id,new Set(p.avoid||[])]) );
-const willConflict = (team,comp,avoid) =>
-  comp.some(m => team.some(tp => avoid.get(m.id).has(tp.id) || avoid.get(tp.id).has(m.id)));
+// בונה יחידות "חייב-עם" באמצעות Union-Find פשוט
+export function buildMustUnits(players) {
+  const idByName = new Map(players.map(p => [p.name, p.id]));
+  const parent = new Map(players.map(p => [p.id, p.id]));
+  const find = (x) => (parent.get(x) === x ? x : parent.set(x, find(parent.get(x))).get(x));
+  const uni = (a, b) => { a = find(a); b = find(b); if (a !== b) parent.set(a, b); };
 
-// עלות איזון: ממוצעים קרובים + גדלים קרובים
-function metric(teams, targetSize, targetSum){
-  const avgs = teams.map(t => t.size? t.sum/t.size : 0);
-  const m = avg(avgs);
-  const varAvg = avg(avgs.map(x => (x-m)*(x-m)));
-  const sizeDev = avg(teams.map(t => Math.abs(t.size-targetSize)));
-  return varAvg + 0.15*sizeDev + 1e-9*Math.random();
-}
-
-// בדיקת כלל הגודל: שוויון ולכל היותר ±1 אם אין חלוקה שווה
-function sizesOk(sizes){
-  const mn=Math.min(...sizes), mx=Math.max(...sizes);
-  return (mx-mn)<=1;
-}
-
-// == האלגוריתם הראשי ==
-export function balanceTeams(allPlayers, k){
-  const players = allPlayers.map(p=>({...p, r: clamp(Number(p.r||5),1,10)}));
-  const totalR = players.reduce((s,p)=>s+p.r,0);
-  const targetSum = totalR/k;
-  const targetSize = players.length/k;
-
-  const comps = componentsWithMust(players)
-    .map(m=>({members:m, sum:m.reduce((s,x)=>s+x.r,0), size:m.length, avg:avg(m.map(x=>x.r))}))
-    .sort((a,b)=> b.avg-a.avg || b.size-a.size);
-
-  // אם קומפוננטה עולה על צפיפות מותרת
-  if (comps.some(c => c.size > Math.ceil(targetSize)))
-    throw new Error("אי אפשר ליצור כוחות חוקיים: יחידת 'חייב-עם' גדולה מדי.");
-
-  const avoid = makeAvoidMap(players);
-  const teams = Array.from({length:k},(_,i)=>({name:`קבוצה ${i+1}`, players:[], sum:0, size:0}));
-
-  // הצבה גרידית תוך כיבוד "לא-עם"
-  for (const c of comps){
-    let best=-1, bestCost=Infinity;
-    for (let i=0;i<k;i++){
-      const t=teams[i];
-      if (willConflict(t.players,c.members,avoid)) continue;
-      const sz = t.size + c.size;
-      const sizes = teams.map(x=>x.size);
-      sizes[i]=sz;
-      if (!sizesOk(sizes)) continue;
-      const cost = Math.abs((t.sum+c.sum)-targetSum) + 0.9*Math.abs(sz-targetSize);
-      if (cost<bestCost){best=i; bestCost=cost;}
+  for (const p of players) {
+    for (const n of p.mustWith || []) {
+      const id2 = idByName.get(n);
+      if (id2) uni(p.id, id2);
     }
-    if (best<0) {
-      // אין יעד בלי קונפליקט – בוחרים הקטן ביותר ומתקננים אח"כ
-      best = teams.map((t,i)=>[i,t.size]).sort((a,b)=>a[1]-b[1])[0][0];
+  }
+  const groups = new Map();
+  for (const p of players) {
+    const r = find(p.id);
+    if (!groups.has(r)) groups.set(r, []);
+    groups.get(r).push(p);
+  }
+  return [...groups.values()];
+}
+
+// בדיקת "לא-עם" דו-כיוונית
+export function violatesAvoidWith(dstTeam, player) {
+  const names = new Set(dstTeam.map(p => p.name));
+  for (const n of player.avoidWith || []) if (names.has(n)) return true;
+  for (const mate of dstTeam) {
+    if ((mate.avoidWith || []).includes(player.name)) return true;
+  }
+  return false;
+}
+
+// איזון גדלים: אם לא מתחלק מספרית—מותר הפרש ±1
+export function allowedTeamSizes(totalPlayers, teamCount) {
+  const base = Math.floor(totalPlayers / teamCount);
+  const remainder = totalPlayers % teamCount; // מספר קבוצות שיקבלו base+1
+  return { base, remainder };
+}
+
+export function checkTeamSizePolicy(teams, activeTotal) {
+  const teamCount = teams.length;
+  const { base, remainder } = allowedTeamSizes(activeTotal, teamCount);
+  const maxAllowed = base + (remainder > 0 ? 1 : 0);
+  const minAllowed = base;
+  for (const t of teams) {
+    if (t.length < minAllowed || t.length > maxAllowed) return false;
+  }
+  return true;
+}
+
+// האלגוריתם ליצירת קבוצות
+export function generateTeams(players, teamCount) {
+  const active = players.filter(p => p.playing);
+  if (teamCount < 2) teamCount = 2;
+
+  const units = buildMustUnits(active);
+  const { base, remainder } = allowedTeamSizes(active.length, teamCount);
+  const targetMax = base + (remainder > 0 ? 1 : 0);
+
+  // אם קיים "Cluster" חייב-עם שגדול מהמקסימום — כשל
+  for (const u of units) {
+    if (u.length > targetMax) {
+      throw new Error("אי אפשר ליצור כוחות חוקיים: יש יחידת 'חייב-עם' גדולה מגודל יעד קבוצה.");
     }
-    const t=teams[best];
-    t.players.push(...c.members); t.sum+=c.sum; t.size+=c.size;
   }
 
-  // שיפורים מקומיים ע"י החלפות בין קבוצות (בלי לשבור "לא-עם")
-  let improved=true, iter=0;
-  while(improved && iter<100){
-    iter++; improved=false;
-    const base = metric(teams, targetSize, targetSum);
-    outer: for(let a=0;a<k;a++){
-      for(let b=a+1;b<k;b++){
-        const A=teams[a], B=teams[b];
-        for(const pa of A.players){
-          for(const pb of B.players){
-            // לא מחליפים שגורם קונפליקט
-            const A2 = A.players.filter(x=>x!==pa).concat(pb);
-            const B2 = B.players.filter(x=>x!==pb).concat(pa);
-            if (willConflict(A2,[pb],avoid) || willConflict(B2,[pa],avoid)) continue;
+  const teams = Array.from({ length: teamCount }, () => []);
+  const totals = Array.from({ length: teamCount }, () => 0);
+  const sizeQuota = Array.from({ length: teamCount }, (_, i) => (i < remainder ? base + 1 : base));
 
-            const sizes = teams.map(t=>t.size);
-            sizes[a]=A.size; sizes[b]=B.size; // unchanged sizes
-            const newTeams = teams.map(t=>({...t}));
-            newTeams[a] = { ...A, players:A2, sum: A.sum - pa.r + pb.r, size:A.size };
-            newTeams[b] = { ...B, players:B2, sum: B.sum - pb.r + pa.r, size:B.size };
-            const score = metric(newTeams, targetSize, targetSum);
-            if (score + 1e-9 < base){
-              teams[a] = newTeams[a];
-              teams[b] = newTeams[b];
-              improved=true; break outer;
-            }
-          }
-        }
+  // נסדר יחידות לפי "כבדות" (סכום רייטינג וגודל), אחרי ערבוב
+  const unitWeight = (u) => sum(u, x => x.rating) + u.length * 0.01;
+  const shuffledUnits = shuffle(units).sort((a, b) => unitWeight(b) - unitWeight(a));
+
+  for (const unit of shuffledUnits) {
+    let best = -1;
+    let bestScore = Number.POSITIVE_INFINITY;
+
+    for (let i = 0; i < teamCount; i++) {
+      if (teams[i].length + unit.length > sizeQuota[i]) continue;
+
+      // "לא-עם" מול כל שחקן בקבוצה
+      let bad = false;
+      for (const p of unit) {
+        if (violatesAvoidWith(teams[i], p)) { bad = true; break; }
       }
+      if (bad) continue;
+
+      const newTotal = totals[i] + sum(unit, x => x.rating);
+      if (newTotal < bestScore) { best = i; bestScore = newTotal; }
     }
+
+    if (best === -1) {
+      throw new Error("אי אפשר ליצור כוחות חוקיים במסגרת ההגבלות (avoidWith/גדלי קבוצות).");
+    }
+
+    teams[best].push(...unit);
+    totals[best] += sum(unit, x => x.rating);
   }
 
-  teams.forEach(t=>{
-    t.players.sort((a,b)=>b.r-a.r);
-    t.sum = t.players.reduce((s,x)=>s+x.r,0);
-    t.size = t.players.length;
-  });
-
-  // בדיקת כלל הגודל בסוף
-  if (!sizesOk(teams.map(t=>t.size)))
-    throw new Error("חלוקה אינה עומדת בכלל הגודל (שוויון/±1).");
-
-  return teams.map(t=>({ name:t.name, players:[...t.players] }));
+  return teams;
 }
