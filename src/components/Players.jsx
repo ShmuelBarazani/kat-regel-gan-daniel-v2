@@ -219,3 +219,169 @@ export default function Players() {
                   <select
                     value={p.pos || "MF"}
                     onChange={(e) => update(idx, { pos: e.target.value })}
+                    style={{ ...styles.input, width: 110 }}
+                  >
+                    {POS_OPTIONS.map((o) => (
+                      <option key={o.v} value={o.v}>{o.t}</option>
+                    ))}
+                  </select>
+                </td>
+
+                {/* שם */}
+                <td style={styles.td}>
+                  <input
+                    value={p.name || ""}
+                    onChange={(e) => update(idx, { name: e.target.value })}
+                    style={{ ...styles.input, width: "100%" }}
+                    placeholder="שם השחקן"
+                  />
+                </td>
+
+                {/* משחק? */}
+                <td
+                  style={{ ...styles.td, cursor: "pointer" }}
+                  onClick={() => update(idx, { active: !(p.active !== false), selected: !(p.active !== false) })}
+                >
+                  <input
+                    type="checkbox"
+                    checked={p.active !== false}
+                    onChange={(e) => update(idx, { active: e.target.checked, selected: e.target.checked })}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                </td>
+              </tr>
+            ))}
+            {filtered.length === 0 && (
+              <tr>
+                <td colSpan={7} style={{ ...styles.td, textAlign: "center", color: "#9fb0cb" }}>
+                  אין שחקנים לתצוגה.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Modal הוספת שחקן */}
+      {openAdd && (
+        <div style={styles.modalBack} onClick={() => setOpenAdd(false)}>
+          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ marginTop: 0, marginBottom: 12 }}>הוספת שחקן</h3>
+
+            <div style={styles.row}>
+              <label>שם</label>
+              <input style={styles.input} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="שם השחקן" />
+            </div>
+
+            <div style={styles.row}>
+              <label>עמדה</label>
+              <select style={styles.input} value={draft.pos} onChange={(e) => setDraft({ ...draft, pos: e.target.value })}>
+                {POS_OPTIONS.map((o) => <option key={o.v} value={o.v}>{o.t}</option>)}
+              </select>
+            </div>
+
+            <div style={styles.row}>
+              <label>ציון</label>
+              <input style={styles.input} type="number" step="0.5" min="1" max="10" value={draft.rating} onChange={(e) => setDraft({ ...draft, rating: e.target.value })} />
+            </div>
+
+            <div style={styles.row}>
+              <label>חייב עם</label>
+              <input style={styles.input} value={draft.mustWith} onChange={(e) => setDraft({ ...draft, mustWith: e.target.value })} placeholder="שמות מופרדים בפסיק" />
+            </div>
+
+            <div style={styles.row}>
+              <label>לא עם</label>
+              <input style={styles.input} value={draft.avoidWith} onChange={(e) => setDraft({ ...draft, avoidWith: e.target.value })} placeholder="שמות מופרדים בפסיק" />
+            </div>
+
+            <div style={styles.row}>
+              <label>משחק?</label>
+              <input type="checkbox" checked={!!draft.active} onChange={(e) => setDraft({ ...draft, active: e.target.checked })} />
+            </div>
+
+            <div style={styles.actions}>
+              <button className="save" style={styles.pillBtn} onClick={saveDraft}>שמור</button>
+              <button className="cancel" style={styles.pillGhost} onClick={() => setOpenAdd(false)}>בטל</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ===== עוזרים =====
+function toNumberOr(v, d) { const n = Number(v); return Number.isFinite(n) ? n : d; }
+
+function editNamesList(title, currentList, idx, commit) {
+  const cur = (currentList || []).join(", ");
+  const val = prompt(`${title} — רשום שמות מופרדים בפסיק`, cur);
+  if (val === null) return;
+  const list = splitList(val);
+  commit(list);
+}
+
+function splitList(s) {
+  return (s || "")
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
+
+// תמיכה בייבוא טקסט/CSV (name,pos,rating) או שורה=שם בלבד.
+// אם יובא JSON בפורמט הישן/החדש – normalizeImportedList מיישר לשדות התקניים.
+function parseCSVorLines(text) {
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const out = [];
+  for (const line of lines) {
+    const parts = line.split(",").map((x) => x.trim());
+    if (parts.length >= 3 && !isNaN(Number(parts[2]))) {
+      out.push({ name: parts[0], pos: parts[1] || "MF", rating: toNumberOr(parts[2], 6), mustWith: [], avoidWith: [], active: true });
+    } else {
+      out.push({ name: line, pos: "MF", rating: 6, mustWith: [], avoidWith: [], active: true });
+    }
+  }
+  return out;
+}
+
+function normalizeImportedList(arr) {
+  if (!Array.isArray(arr)) return [];
+  const idToName = new Map();
+  for (const p of arr) if (p && p.name && (typeof p.id === "number" || typeof p.id === "string")) idToName.set(String(p.id), p.name);
+  const toNameList = (val) => {
+    if (!val) return [];
+    if (Array.isArray(val)) return val.map((x) => (idToName.has(String(x)) ? idToName.get(String(x)) : String(x))).filter(Boolean);
+    return String(val).split(",").map((s) => s.trim()).filter(Boolean);
+  };
+  return arr
+    .map((raw) => {
+      if (!raw || !raw.name) return null;
+      const rating = toNumberOr(raw.r ?? raw.rating, 6);
+      const active = typeof raw.selected === "boolean" ? raw.selected : raw.active !== false;
+      return {
+        name: raw.name,
+        pos: raw.pos || "MF",
+        rating,
+        mustWith: Array.isArray(raw.mustWith) ? raw.mustWith : toNameList(raw.prefer),
+        avoidWith: Array.isArray(raw.avoidWith) ? raw.avoidWith : toNameList(raw.avoid),
+        active,
+      };
+    })
+    .filter(Boolean);
+}
+
+function getComparator(sort) {
+  const dir = sort.dir === "asc" ? 1 : -1;
+  if (sort.key === "name") {
+    return (a, b) => dir * (a.name || "").localeCompare(b.name || "", "he", { sensitivity: "base" });
+  }
+  if (sort.key === "pos") {
+    const order = { GK: 0, DF: 1, MF: 2, FW: 3 };
+    return (a, b) => dir * ((order[a.pos] ?? 99) - (order[b.pos] ?? 99));
+  }
+  if (sort.key === "rating") {
+    return (a, b) => dir * ((a.rating ?? 0) - (b.rating ?? 0));
+  }
+  return () => 0;
+}
