@@ -4,15 +4,15 @@ import { useStorage, POS } from "../lib/storage.js";
 import PlayerFormModal from "./PlayerFormModal.jsx";
 import LinkPickerModal from "./LinkPickerModal.jsx";
 
-/* סדר עמודות – מימין לשמאל */
+/* סדר עמודות – "משחק?" ראשונה */
 const COLS = [
+  { key: "active",   label: "משחק?" },
   { key: "name",     label: "שם" },
   { key: "pos",      label: "עמדה" },
   { key: "rating",   label: "ציון" },
   { key: "mustWith", label: "חייב עם" },
   { key: "avoidWith",label: "לא עם" },
   { key: "actions",  label: "פעולות" },
-  { key: "active",   label: "משחק?" },
 ];
 
 export default function Players({ embedded = false }) {
@@ -107,8 +107,8 @@ export default function Players({ embedded = false }) {
               {COLS.map(c => (
                 <th
                   key={c.key}
-                  onClick={()=>!["actions","active"].includes(c.key) && flipSort(c.key)}
-                  style={{cursor: !["actions","active"].includes(c.key) ? "pointer" : "default"}}
+                  onClick={()=>!["actions"].includes(c.key) && flipSort(c.key)}
+                  style={{cursor: !["actions"].includes(c.key) ? "pointer" : "default"}}
                 >
                   {c.label}{sort.key===c.key ? (sort.dir==="asc" ? " ▲":" ▼") : ""}
                 </th>
@@ -118,6 +118,10 @@ export default function Players({ embedded = false }) {
           <tbody>
             {sortedPlayers.map(p => (
               <tr key={p.id}>
+                {/* משחק? */}
+                <td><input type="checkbox" checked={!!p.active}
+                           onChange={e => updatePlayer(p.id, {active: e.target.checked})}/></td>
+
                 {/* שם */}
                 <td className="nowrap">
                   <input className="input"
@@ -153,10 +157,6 @@ export default function Players({ embedded = false }) {
 
                 {/* פעולות */}
                 <td><button className="btn danger" onClick={()=>removePlayer(p.id)}>מחיקה</button></td>
-
-                {/* משחק? */}
-                <td><input type="checkbox" checked={!!p.active}
-                           onChange={e => updatePlayer(p.id, {active: e.target.checked})}/></td>
               </tr>
             ))}
           </tbody>
