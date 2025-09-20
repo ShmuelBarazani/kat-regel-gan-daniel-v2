@@ -1,37 +1,61 @@
 // src/components/SavedCycles.jsx
-import React from "react";
+import React, { useMemo, useState } from "react";
 import { useStorage } from "../lib/storage.js";
 
-export default function SavedCycles({ onOpen = ()=>{} }){
-  const { cycles, setCycles } = useStorage();
+export default function SavedCycles(){
+  const { getCycles, removeCycles } = useStorage();
+  const [list, setList] = useState(getCycles());
+  const [sel, setSel] = useState(new Set());
 
-  function remove(id){
-    if(!confirm("למחוק מחזור?")) return;
-    setCycles(prev => prev.filter(c => c.id !== id));
-  }
+  const toggle = (id) => {
+    const nx = new Set(sel);
+    nx.has(id) ? nx.delete(id) : nx.add(id);
+    setSel(nx);
+  };
+
+  const allIds = useMemo(()=>list.map(x=>x.id),[list]);
+  const toggleAll = () => {
+    setSel(sel.size===list.length ? new Set() : new Set(allIds));
+  };
+
+  const removeSel = () => {
+    if (!sel.size) return;
+    if (!confirm(`למחוק ${sel.size} מחזורים?`)) return;
+    removeCycles(Array.from(sel));
+    const fresh = getCycles();
+    setList(fresh);
+    setSel(new Set());
+  };
 
   return (
-    <section className="panel">
-      <div className="panel-header"><h2>מחזורים שמורים</h2></div>
-      <div className="table-wrap">
-        <table className="tbl">
-          <thead><tr><th>תאריך</th><th>קבוצות</th><th></th></tr></thead>
+    <div className="container" dir="rtl">
+      <div className="toolbar">
+        <button className="btn" onClick={toggleAll}>סמן הכל/בטל</button>
+        <button className="btn danger" onClick={removeSel}>מחק נבחרים ({sel.size})</button>
+      </div>
+
+      <div className="table-wrapper">
+        <table className="players-table">
+          <thead>
+            <tr>
+              <th>בחר</th>
+              <th>תאריך</th>
+              <th>קבוצות</th>
+              <th>שחקנים פעילים</th>
+            </tr>
+          </thead>
           <tbody>
-            {cycles.length ? cycles.map(c=>(
+            {list.map(c=>(
               <tr key={c.id}>
-                <td>{c.at}</td>
-                <td>{c.teams?.length || 0}</td>
-                <td className="center">
-                  <button className="pill" onClick={()=>{ alert("פתיחת מחזור מיישמת לקומפוננטת הקבוצות – במידת הצורך אשחיל לך עדכון שמטעין אותו ישירות לשם."); onOpen(); }}>
-                    פתח
-                  </button>
-                  <button className="pill warn" onClick={()=>remove(c.id)}>מחק</button>
-                </td>
+                <td><input type="checkbox" checked={sel.has(c.id)} onChange={()=>toggle(c.id)}/></td>
+                <td>{new Date(c.date).toLocaleString("he-IL")}</td>
+                <td>{c.teamCount}</td>
+                <td>{c.snapshot?.length ?? "-"}</td>
               </tr>
-            )) : <tr><td className="center muted" colSpan={3}>אין מחזורים שמורים</td></tr>}
+            ))}
           </tbody>
         </table>
       </div>
-    </section>
+    </div>
   );
 }
