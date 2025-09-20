@@ -1,154 +1,191 @@
 // src/components/Players.jsx
-import React, { useMemo, useState } from "react";
-import { useStorage, POS } from "../lib/storage.js";
-import PlayerFormModal from "./PlayerFormModal.jsx";
-import LinkPickerModal from "./LinkPickerModal.jsx";
+import React, { useEffect, useMemo, useState } from "react";
+import { getPlayers, setPlayers, countActive } from "../lib/storage";
 
-const COLS = [
-  { key: "active",   label: "משחק?" },
-  { key: "name",     label: "שם" },
-  { key: "pos",      label: "עמדה" },
-  { key: "rating",   label: "ציון" },
-  { key: "mustWith", label: "חייב עם" },
-  { key: "avoidWith",label: "לא עם" },
-  { key: "actions",  label: "פעולות" },
-];
+const POS = ["GK", "DF", "MF", "FW"];
 
-export default function Players({ embedded=false }) {
-  const { players, setPlayers } = useStorage();
-  const [showAdd, setShowAdd] = useState(false);
-  const [sort, setSort] = useState({ key:"rating", dir:"desc" });
+export default function Players() {
+  const [players, setLocal] = useState([]);
 
-  const normalized = useMemo(()=>players.map(p=>({
-    ...p,
-    mustWith: p.mustWith ?? p.prefer ?? [],
-    avoidWith: p.avoidWith ?? p.avoid ?? [],
-  })), [players]);
+  // טען מלוקאל־סטוראז' או מקובץ public/players.json
+  useEffect(() => {
+    const fromStore = getPlayers(null);
+    if (fromStore) {
+      setLocal(fromStore);
+    } else {
+      fetch("/players.json?ts=" + Date.now())
+        .then(r => r.json())
+        .then(list => {
+          // ודא שדות מינימום
+          const norm = list.map(p => ({
+            id: p.id ?? crypto.randomUUID(),
+            name: p.name ?? "",
+            pos: p.pos ?? "MF",
+            r: Number(p.r ?? 6.5),
+            play: !!p.selected,      // selected => play
+            prefer: p.prefer ?? [],
+            avoid: p.avoid ?? [],
+          }));
+          setLocal(norm);
+          setPlayers(norm);
+        })
+        .catch(() => setLocal([]));
+    }
+  }, []);
 
-  const options = useMemo(()=>normalized.map(p=>({id:String(p.id),name:p.name})),[normalized]);
-  const idToName = useMemo(()=> {
-    const m = new Map(options.map(o=>[o.id,o.name]));
-    return id => m.get(String(id)) || String(id);
-  }, [options]);
+  // שמירה אוטומטית
+  useEffect(() => { setPlayers(players); }, [players]);
 
-  const [picker, setPicker] = useState(null);
-  const openPicker = (player, field) => {
-    const initial = (player[field] ?? (field==="mustWith"?player.prefer:player.avoid) ?? []).map(String);
-    setPicker({ playerId: player.id, field, value: initial });
-  };
-  const handlePickerSave = (vals) => {
-    const { playerId, field } = picker;
-    const patch = { [field]: vals };
-    if (field==="mustWith") patch.prefer = vals; else patch.avoid = vals;
-    setPlayers(prev => prev.map(p => p.id===playerId ? ({...p, ...patch}) : p));
-    setPicker(null);
-  };
+  const activeCount = useMemo(() => countActive(players), [players]);
 
-  const flipSort = (key) => setSort(s => s.key===key ? ({key, dir:s.dir==="asc"?"desc":"asc"}) : ({key, dir:"asc"}));
-  const sorted = useMemo(()=>{
-    const arr = normalized.slice();
-    arr.sort((a,b)=>{
-      const k = sort.key;
-      let va = k==="mustWith"||k==="avoidWith" ? (a[k]?.length||0) : (k==="name"||k==="pos"?String(a[k]||""):a[k]);
-      let vb = k==="mustWith"||k==="avoidWith" ? (b[k]?.length||0) : (k==="name"||k==="pos"?String(b[k]||""):b[k]);
-      if (typeof va==="string" && typeof vb==="string") {
-        const cmp = va.localeCompare(vb,"he");
-        return sort.dir==="asc"?cmp:-cmp;
-      } else {
-        const cmp = Number(va) - Number(vb);
-        return sort.dir==="asc"?cmp:-cmp;
-      }
-    });
-    return arr;
-  }, [normalized, sort]);
+  const update = (id, patch) =>
+    setLocal(prev => prev.map(p => (p.id === id ? { ...p, ...patch } : p)));
 
-  const update = (id, patch) => setPlayers(prev => prev.map(p => p.id===id ? ({...p, ...patch}) : p));
-  const remove  = (id) => setPlayers(prev => prev.filter(p => p.id!==id));
+  const remove = (id) =>
+    setLocal(prev => prev.filter(p => p.id !== id));
 
-  const chips = (ids=[]) =>
-    ids.length ? ids.map(x => <span key={x} className="chip">{idToName(x)}</span>) :
-    <span className="chip chip-empty">—</span>;
+  const addPlayer = () =>
+    setLocal(prev => [
+      {
+        id: crypto.randomUUID(),
+        name: "",
+        pos: "MF",
+        r: 6.5,
+        play: false,
+        prefer: [],
+        avoid: [],
+      },
+      ...prev,
+    ]);
 
   return (
-    <div className={embedded ? "players-embed-root" : "players-page container"} dir="rtl">
-      {!embedded && (
-        <div className="toolbar players-toolbar">
-          <button className="btn primary" onClick={()=>setShowAdd(true)}>הוסף שחקן</button>
-        </div>
-      )}
+    <section className="page players" dir="rtl">
+      <div className="toolbar">
+        <h1 className="page-title">קטרגל גן-דניאל ⚽</h1>
+        <div className="spacer" />
+        <button className="btn add" onClick={addPlayer}>הוסף שחקן</button>
+      </div>
 
-      <div className={embedded ? "table-scroll" : "table-wrapper"}>
-        <table className="players-table">
-          <colgroup>
-            <col className="col-active" />
-            <col className="col-name" />
-            <col className="col-pos" />
-            <col className="col-rating" />
-            <col className="col-must" />
-            <col className="col-avoid" />
-            <col className="col-actions" />
-          </colgroup>
+      <div className="subbar">
+        <span>מסומנים למשחק: <b>{activeCount}</b> / {players.length}</span>
+      </div>
+
+      <div className="table-wrapper players-scroll">
+        <table className="table players-table">
           <thead>
             <tr>
-              {COLS.map(c=>(
-                <th key={c.key}
-                    onClick={()=>!["actions"].includes(c.key)&&flipSort(c.key)}
-                    style={{cursor: !["actions"].includes(c.key) ? "pointer":"default"}}>
-                  {c.label}{sort.key===c.key ? (sort.dir==="asc"?" ▲":" ▼") : ""}
-                </th>
-              ))}
+              <th style={{width: 72}}>משחק?</th>
+              <th style={{minWidth: 240}}>שם</th>
+              <th style={{width: 120}}>עמדה</th>
+              <th style={{width: 120}}>ציון</th>
+              <th>חייב עם</th>
+              <th>לא עם</th>
+              <th style={{width: 100}}>פעולות</th>
             </tr>
           </thead>
           <tbody>
-            {sorted.map(p=>(
+            {players.map(p => (
               <tr key={p.id}>
-                <td><input type="checkbox" checked={!!p.active} onChange={e=>update(p.id,{active:e.target.checked})}/></td>
-                <td className="nowrap">
-                  <input className="input input-name" value={p.name} onChange={e=>update(p.id,{name:e.target.value})}/>
+                {/* משחק? ראשונה */}
+                <td className="center">
+                  <input
+                    type="checkbox"
+                    checked={!!p.play}
+                    onChange={e => update(p.id, { play: e.target.checked })}
+                  />
                 </td>
+
+                {/* שם */}
                 <td>
-                  <select value={p.pos} onChange={e=>update(p.id,{pos:e.target.value})}>
-                    {POS.map(op=><option key={op} value={op}>{op}</option>)}
+                  <input
+                    className="input"
+                    value={p.name}
+                    onChange={e => update(p.id, { name: e.target.value })}
+                    placeholder="שם שחקן"
+                  />
+                </td>
+
+                {/* עמדה */}
+                <td>
+                  <select
+                    className="select"
+                    value={p.pos}
+                    onChange={e => update(p.id, { pos: e.target.value })}
+                  >
+                    {POS.map(x => <option key={x} value={x}>{x}</option>)}
                   </select>
                 </td>
+
+                {/* ציון */}
                 <td>
-                  <input type="number" className="input input-rating" step="0.1" min="1" max="10"
-                         value={p.rating} onChange={e=>update(p.id,{rating:Number(e.target.value)})}/>
+                  <input
+                    className="input center"
+                    type="number" step="0.5" min="1" max="10"
+                    value={p.r}
+                    onChange={e => update(p.id, { r: Number(e.target.value) })}
+                  />
                 </td>
-                <td className="nowrap">
-                  <div className="chips-row">
-                    <div className="chips flex-1">{chips(p.mustWith)}</div>
-                    <button className="btn small" onClick={()=>openPicker(p,"mustWith")}>ערוך</button>
-                  </div>
+
+                {/* חייב עם / לא עם – שבבי תצוגה + עריכה בלחיצה */}
+                <td className="chips-cell">
+                  <Chips editable list={p.prefer} all={players} onChange={(list) => update(p.id, { prefer: list })} />
                 </td>
-                <td className="nowrap">
-                  <div className="chips-row">
-                    <div className="chips flex-1">{chips(p.avoidWith)}</div>
-                    <button className="btn small" onClick={()=>openPicker(p,"avoidWith")}>ערוך</button>
-                  </div>
+                <td className="chips-cell">
+                  <Chips editable list={p.avoid} all={players} onChange={(list) => update(p.id, { avoid: list })} />
                 </td>
-                <td><button className="btn danger" onClick={()=>remove(p.id)}>מחיקה</button></td>
+
+                <td className="center">
+                  <button className="btn danger" onClick={() => remove(p.id)}>מחיקה</button>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+    </section>
+  );
+}
 
-      {showAdd && (
-        <PlayerFormModal
-          players={normalized}
-          onClose={()=>setShowAdd(false)}
-          onSave={(np)=>{ setPlayers(prev=>[np,...prev]); setShowAdd(false); }}
-        />
+/** בחירה קומפקטית לשדות "חייב עם / לא עם" */
+function Chips({ list, all, editable, onChange }) {
+  const [open, setOpen] = useState(false);
+  const names = new Map(all.map(p => [p.id, p.name]));
+  const ids = new Map(all.map(p => [p.name, p.id])); // תמיכה בשמות ישנים
+
+  const normalized = (list ?? []).map(x => (ids.get(x) || x));
+
+  const toggle = (id) => {
+    const exists = normalized.includes(id);
+    const next = exists ? normalized.filter(x => x !== id) : [...normalized, id];
+    onChange?.(next);
+  };
+
+  return (
+    <div className="chips">
+      {(normalized.length ? normalized : []).map(id => (
+        <span key={id} className="chip">{names.get(id) ?? id}</span>
+      ))}
+      {editable && (
+        <button className="btn tiny" onClick={() => setOpen(v => !v)}>ערוך</button>
       )}
-      {picker && (
-        <LinkPickerModal
-          title={picker.field==="mustWith"?'בחר "חייב עם"':'בחר "לא עם"'}
-          options={options.filter(o=>o.id!==String(picker.playerId))}
-          value={picker.value}
-          onSave={vals=>handlePickerSave(vals)}
-          onClose={()=>setPicker(null)}
-        />
+      {open && (
+        <div className="picker">
+          <div className="picker-list">
+            {all.map(p => (
+              <label key={p.id} className="pick-row">
+                <input
+                  type="checkbox"
+                  checked={normalized.includes(p.id)}
+                  onChange={() => toggle(p.id)}
+                />
+                <span>{p.name}</span>
+              </label>
+            ))}
+          </div>
+          <div className="picker-actions">
+            <button className="btn" onClick={() => setOpen(false)}>סגור</button>
+          </div>
+        </div>
       )}
     </div>
   );
