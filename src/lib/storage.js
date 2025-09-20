@@ -6,8 +6,22 @@ const STORAGE_KEYS = {
   teamCount: "katregal:teamCount",
   teams: "katregal:teams",
   teamsHistory: "katregal:teams:snapshots",
-  rounds: "katregal:rounds" // NEW
+  rounds: "katregal:rounds"
 };
+
+// ===== Default players seed (נטען פעם ראשונה בלבד) =====
+const DEFAULT_PLAYERS = [
+  { name: "שמוליק", pos: "FW", rating: 6.5, mustWith: [], avoidWith: [], active: true },
+  { name: "רמי",    pos: "MF", rating: 6.0, mustWith: [], avoidWith: [], active: true },
+  { name: "רימון",  pos: "MF", rating: 7.0, mustWith: [], avoidWith: [], active: true },
+  { name: "רונן",   pos: "DF", rating: 5.5, mustWith: [], avoidWith: [], active: true },
+  { name: "ראם",    pos: "MF", rating: 7.5, mustWith: [], avoidWith: [], active: true },
+  { name: "צפריר",  pos: "DF", rating: 8.0, mustWith: [], avoidWith: [], active: true },
+  { name: "צחי",    pos: "GK", rating: 7.5, mustWith: [], avoidWith: [], active: true },
+  { name: "פיק",    pos: "FW", rating: 5.0, mustWith: [], avoidWith: [], active: true },
+  { name: "פייביש", pos: "MF", rating: 8.5, mustWith: [], avoidWith: [], active: true },
+  { name: "תומר",   pos: "FW", rating: 6.0, mustWith: [], avoidWith: [], active: true }
+];
 
 // LocalStorage-safe (עובד גם בזמן build/SSR)
 function ls() {
@@ -36,13 +50,19 @@ function writeJSON(key, value) {
   try {
     ls().setItem(key, JSON.stringify(value));
   } catch {
-    // ignore quota/permission errors
+    // ignore
   }
 }
 
 // ===== Players API =====
 export function getPlayers() {
-  return readJSON(STORAGE_KEYS.players, []);
+  let list = readJSON(STORAGE_KEYS.players, null);
+  if (!Array.isArray(list) || list.length === 0) {
+    // טעינה ראשונה – נזרע ברירת מחדל ונשמור
+    writeJSON(STORAGE_KEYS.players, DEFAULT_PLAYERS);
+    list = DEFAULT_PLAYERS;
+  }
+  return list;
 }
 
 export function setPlayers(list) {
@@ -66,8 +86,7 @@ export function setTeamCount(n) {
   writeJSON(STORAGE_KEYS.teamCount, Number.isFinite(num) && num > 0 ? num : 4);
 }
 
-// ===== Rounds (NEW) =====
-// מבנה מומלץ: [{id:1, name:"מחזור 1", date:"2025-09-01"}, ...]
+// ===== Rounds =====
 export function getRounds() {
   return readJSON(STORAGE_KEYS.rounds, []);
 }
