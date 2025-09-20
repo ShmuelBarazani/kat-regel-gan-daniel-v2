@@ -1,33 +1,124 @@
-/* --- chips for selected players --- */
-.chips { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
-.chip {
-  background:#10303a;
-  color:#cfe2ff;
-  border:1px solid var(--border, #17323a);
-  border-radius:999px;
-  padding:2px 8px;
-  font-size:.85rem;
+/* ========= Theme & Reset ========= */
+:root{
+  --bg: #06141a;
+  --panel: #0d1c21;
+  --panel-2:#0f2026;
+  --border:#17323a;
+  --text:#e8f2f7;
+  --muted:#9bb3bd;
+  --accent:#26b0bd;
+  --primary:#2bd887;   /* ירקרק לכפתור הראשי */
+  --danger:#b84a4a;
+  --shadow: 0 6px 18px rgba(0,0,0,.35);
 }
-.chip-empty { opacity:.6; }
 
-.btn.small { padding:.25rem .55rem; font-size:.85rem; }
-.cell-btn { margin-inline-start:6px; }
+*{box-sizing:border-box}
+html,body,#root{height:100%}
+html,body{margin:0; padding:0; background:var(--bg); color:var(--text); font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial; line-height:1.4}
+h1,h2,h3,h4,h5,h6{margin:0; font-weight:400} /* לא בולד לכותרות רגילות */
+a{color:inherit; text-decoration:none}
+input,select,button,textarea{background:var(--panel-2); color:var(--text); border:1px solid var(--border); border-radius:12px; padding:.45rem .6rem; outline:none}
+input:focus,select:focus,textarea:focus{box-shadow:0 0 0 2px rgba(38,176,189,.25) inset}
+table{width:100%; border-collapse:separate; border-spacing:0}
 
-/* --- picker modal list & search --- */
-.picker-search { width:100%; margin:8px 0; }
-.picker-list {
-  max-height:45vh;
-  overflow:auto;
-  border:1px solid var(--border, #17323a);
-  border-radius:12px;
-  padding:8px;
-  background:#0f2227;
+.container{max-width:1200px; margin-inline:auto; padding:0 12px}
+
+/* ========= Site Title ========= */
+.site-title{
+  display:flex; align-items:center; justify-content:center;
+  gap:.5rem; margin:16px 0 8px; font-size:clamp(26px,3.6vw,42px);
+  font-weight:600; letter-spacing:.5px;
 }
-.picker-item {
-  display:flex; align-items:center; gap:8px;
-  padding:6px 4px; border-bottom:1px dashed rgba(255,255,255,.06);
-}
-.picker-item:last-child { border-bottom:none; }
+.site-title .ball{font-size:1.1em}
 
-/* כבר קיימים אצלך, אבל מזכיר כדי שהמודאל יהיה מעל הכול */
-.modal-backdrop { z-index: 10000 !important; }
+/* ========= Top toolbar / pills ========= */
+.toolbar, .players-toolbar{
+  display:flex; flex-wrap:wrap; align-items:center; gap:10px;
+  margin:12px 0 14px;
+}
+.toolbar-item{display:flex; align-items:center; gap:6px}
+
+/* ========= Buttons ========= */
+.btn{border:1px solid var(--border); background:var(--panel-2); color:var(--text);
+     padding:.5rem .8rem; border-radius:12px; cursor:pointer}
+.btn:hover{filter:brightness(1.06)}
+.btn.primary{background:var(--primary); color:#042016; border-color:#1aa86a}
+.btn.danger{background:var(--danger); border-color:#9d3e3e}
+.btn.small{padding:.25rem .55rem; font-size:.85rem}
+
+/* ========= Teams page ========= */
+.teams-page{max-width:1200px; margin:0 auto; padding:0 12px 20px}
+.teams-grid{
+  display:grid; gap:14px;
+  grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
+  align-items:start;
+}
+.team-card{
+  background:var(--panel); border:1px solid var(--border); border-radius:16px;
+  box-shadow:var(--shadow); overflow:hidden;
+}
+.team-header{
+  display:flex; justify-content:space-between; align-items:center;
+  padding:10px 12px; background:rgba(255,255,255,.03); border-bottom:1px solid var(--border);
+}
+.team-metrics{opacity:.85; font-size:.9rem}
+.team-list{list-style:none; margin:0; padding:8px}
+.team-row{
+  display:grid; grid-template-columns:1fr 56px 56px; gap:12px;
+  padding:8px 10px; border:1px solid transparent; border-radius:10px;
+  transition:.15s; background:transparent;
+}
+.team-row + .team-row{margin-top:6px}
+.team-row:hover{border-color:var(--border); background:#0f2227}
+.team-row .cell.name{text-align:right}
+.team-row .cell.pos, .team-row .cell.rating{text-align:center}
+
+/* ========= Embedded players table (inside Teams) ========= */
+.players-embed{margin-top:14px}
+.table-scroll{
+  max-height:56vh; overflow:auto; background:var(--panel);
+  border:1px solid var(--border); border-radius:14px; padding:6px;
+  box-shadow:var(--shadow);
+}
+
+/* sticky headers */
+.players-table thead th{
+  position:sticky; top:0; z-index:2;
+  background:var(--panel); border-bottom:1px solid var(--border);
+  padding:10px 8px; text-align:center;
+}
+.players-table tbody td{padding:8px 6px; text-align:center; vertical-align:middle}
+.players-table tbody tr:nth-child(odd){background:rgba(255,255,255,.02)}
+.players-table tbody tr:hover{background:rgba(255,255,255,.04)}
+
+/* צ’יפים לבחירות חייב/לא-עם */
+.chips{display:flex; gap:6px; flex-wrap:wrap; align-items:center; justify-content:flex-start}
+.chip{background:#10303a; color:#cfe2ff; border:1px solid var(--border); border-radius:999px; padding:2px 8px; font-size:.85rem}
+.chip-empty{opacity:.6}
+.cell-btn{margin-inline-start:6px}
+
+/* ========= Modal ========= */
+.modal-backdrop{
+  position:fixed; inset:0; background:rgba(0,0,0,.5);
+  display:grid; place-items:center; z-index:10000;
+}
+.modal{
+  width:min(900px,96vw); max-height:90vh; overflow:auto;
+  background:var(--panel); border:1px solid var(--border); border-radius:16px;
+  padding:18px; box-shadow:var(--shadow);
+}
+.modal .modal-actions{display:flex; gap:8px; justify-content:flex-start; margin-top:8px}
+
+.picker-search{width:100%; margin:8px 0}
+.picker-list{
+  max-height:45vh; overflow:auto; background:#0f2227; border:1px solid var(--border);
+  border-radius:12px; padding:8px
+}
+.picker-item{display:flex; gap:8px; align-items:center; padding:6px 4px;
+  border-bottom:1px dashed rgba(255,255,255,.06)}
+.picker-item:last-child{border-bottom:none}
+
+/* ========= Small helpers ========= */
+.input{width:100%}
+.nowrap{white-space:nowrap}
+.players-embed-root .players-toolbar{margin:8px 8px 10px}
