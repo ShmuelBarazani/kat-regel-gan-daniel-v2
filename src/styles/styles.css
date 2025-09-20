@@ -65,3 +65,87 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: Heebo,
 
 /* עזרה קטנה */
 .muted { color: var(--muted); }
+/* ==== Teams page layout ==== */
+.page-teams {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* כותרת ופקדים */
+.topbar {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 12px;
+}
+.topbar .title {
+  font-size: 28px;
+  font-weight: 700;
+  text-align: right; /* אפשר center אם תרצה */
+}
+.topbar .controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.topbar .ctrl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.btn.primary {
+  padding: 8px 14px;
+  border-radius: 10px;
+}
+
+/* כרטיסי קבוצות */
+.teams-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+}
+.team-card {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 14px;
+  padding: 10px;
+}
+.team-head {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 8px;
+}
+.team-head .avg { opacity: .85; }
+.team-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.team-item { display: grid; grid-template-columns: 40px 1fr 40px; gap: 6px; align-items: center; }
+.team-item .pos { opacity: .85; text-align: center; }
+.team-item .rate { text-align: center; }
+
+/* טבלת שחקנים */
+.players-block {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.table-head, .tr {
+  display: grid;
+  grid-template-columns: 80px 1fr 120px 120px; /* משחק? | שם | עמדה | ציון */
+  gap: 8px;
+  align-items: center;
+}
+.table-head { padding: 10px 12px; font-weight: 600; }
+.tr { padding: 8px 12px; border-top: 1px solid rgba(255,255,255,0.07); }
+
+.w-80 { width: 80px; }
+.w-120 { width: 120px; }
+.grow { min-width: 0; }
+
+.players-scroll {
+  max-height: 48vh;  /* גלילה פנימית */
+  overflow: auto;
+}
+
+.clickable { cursor: pointer; }
+.chip.muted { opacity: .8; }
+.hint { opacity: .7; padding: 12px; }
