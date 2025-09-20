@@ -2,37 +2,32 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { generateTeams, checkTeamSizePolicy, buildMustUnits, violatesAvoidWith } from "../logic/balance";
 
 /**
- * DoForces.jsx — v3.3 (KATREGEL GAN DANIEL)
- *
- * תואם דרישות "עשה כוחות / מחזור":
- * • כרטיסי הקבוצות למעלה; הטבלה למטה.
- * • בכל כרטיס: "קבוצה X", ממוצע, סכ"כ, מספר שחקנים.
- * • "הסתר ציונים" מחביא ציונים בכרטיסים בלבד (הטבלה נשארת עם ציונים).
- * • Drag & Drop בין קבוצות וגם החזרה לטבלה.
- * • איזון גדלים: מותר רק ±1. גרירה שיוצרת חריגה—נחסמת ומופיעה אזהרה.
- * • "חייב-עם": האלגוריתם מכבד. אם יחידה גדולה מגודל יעד—הודעת שגיאה. גרירה שמפרקת יחידה—אזהרה (לא חסימה).
+ * DoForces.jsx — v3.3.1 (KATREGEL GAN DANIEL)
+ * • כרטיסים למעלה; טבלת שחקנים למטה.
+ * • בכרטיס: שם קבוצה, ממוצע, סכ"כ, מס' שחקנים.
+ * • "הסתר ציונים" משפיע רק על הכרטיסים.
+ * • Drag&Drop בין קבוצות + החזרה לטבלה.
+ * • איזון גדלים: ±1 בלבד (גרירה שסוטה נחסמת עם אזהרה).
+ * • חייב-עם: האלגו מכבד; גרירה שמפרקת — רק אזהרה.
  * • "עשה כוחות" יוצר חלוקה חדשה בכל לחיצה.
  * • "שמור מחזור" שומר טיוטה ב-localStorage ('draftCycles').
- *
- * הקומפוננטה עומדת לבד, אך אם יש לכם מקור שחקנים אחר (API/Store),
- * החליפו את loadPlayers()/savePlayers() בהתאם. כרגע יש דיפולט/localStorage("players").
  */
 
-const clamp = (n, a, b) => Math.max(a, Math.min(b, n)));
+const clamp = (n, a, b) => Math.max(a, Math.min(b, n)); // ✅ תוקן
 const sum = (arr, sel = (x) => x) => arr.reduce((s, x) => s + sel(x), 0);
 const avg = (arr, sel = (x) => x) => (arr.length ? +(sum(arr, sel) / arr.length).toFixed(2) : 0);
 
 const DEFAULT_PLAYERS = [
-  { id: "1",  name: "אופיר",        pos: "MF", rating: 9,   playing: true, mustWith: [],          avoidWith: [] },
-  { id: "2",  name: "פייביש",       pos: "MF", rating: 9.5, playing: true, mustWith: [],          avoidWith: [] },
-  { id: "3",  name: "מקסים",        pos: "DF", rating: 6.5, playing: true, mustWith: [],          avoidWith: [] },
-  { id: "4",  name: "אייטני-סאם",   pos: "FW", rating: 8.5, playing: true, mustWith: ["מיכה"],    avoidWith: [] },
-  { id: "5",  name: "עזי עפרני",    pos: "MF", rating: 8,   playing: true, mustWith: [],          avoidWith: [] },
+  { id: "1",  name: "אופיר",        pos: "MF", rating: 9,   playing: true, mustWith: [],             avoidWith: [] },
+  { id: "2",  name: "פייביש",       pos: "MF", rating: 9.5, playing: true, mustWith: [],             avoidWith: [] },
+  { id: "3",  name: "מקסים",        pos: "DF", rating: 6.5, playing: true, mustWith: [],             avoidWith: [] },
+  { id: "4",  name: "אייטני-סאם",   pos: "FW", rating: 8.5, playing: true, mustWith: ["מיכה"],       avoidWith: [] },
+  { id: "5",  name: "עזי עפרני",    pos: "MF", rating: 8,   playing: true, mustWith: [],             avoidWith: [] },
   { id: "6",  name: "מיכה",         pos: "FW", rating: 8,   playing: true, mustWith: ["אייטני-סאם"], avoidWith: [] },
-  { id: "7",  name: "יוסי תלתלים",  pos: "MF", rating: 7.5, playing: true, mustWith: [],          avoidWith: [] },
-  { id: "8",  name: "גילי",         pos: "DF", rating: 7,   playing: true, mustWith: [],          avoidWith: ["אלדד"] },
-  { id: "9",  name: "עופר",         pos: "DF", rating: 6.5, playing: true, mustWith: [],          avoidWith: [] },
-  { id: "10", name: "אלדד",         pos: "FW", rating: 3,   playing: true, mustWith: [],          avoidWith: ["גילי"] },
+  { id: "7",  name: "יוסי תלתלים",  pos: "MF", rating: 7.5, playing: true, mustWith: [],             avoidWith: [] },
+  { id: "8",  name: "גילי",         pos: "DF", rating: 7,   playing: true, mustWith: [],             avoidWith: ["אלדד"] },
+  { id: "9",  name: "עופר",         pos: "DF", rating: 6.5, playing: true, mustWith: [],             avoidWith: [] },
+  { id: "10", name: "אלדד",         pos: "FW", rating: 3,   playing: true, mustWith: [],             avoidWith: ["גילי"] },
 ];
 
 function loadPlayers() {
@@ -52,7 +47,7 @@ function savePlayers(players) {
 export default function DoForces() {
   const [players, setPlayers] = useState(loadPlayers());
   const [teamCount, setTeamCount] = useState(4);
-  const [teams, setTeams]       = useState(() => Array.from({ length: 4 }, () => []));
+  const [teams, setTeams] = useState(() => Array.from({ length: 4 }, () => []));
   const [hideCardRatings, setHideCardRatings] = useState(false);
   const [toast, setToast] = useState(null); // {type:'warn'|'err'|'ok', msg}
 
@@ -105,9 +100,10 @@ export default function DoForces() {
     // אזהרת פירוק יחידת חייב-עם (לא חסימה)
     const unitOf = buildMustUnits(activePlayers).find(u => u.some(x => x.id === player.id));
     if (unitOf) {
-      // האם כל חברי היחידה עדיין יחד?
       const firstTeamIdx = nextTeams.findIndex(t => t.some(x => x.id === unitOf[0].id));
-      const stillTogether = firstTeamIdx !== -1 && unitOf.every(m => nextTeams[firstTeamIdx].some(x => x.id === m.id));
+      const stillTogether =
+        firstTeamIdx !== -1 &&
+        unitOf.every(m => nextTeams[firstTeamIdx].some(x => x.id === m.id));
       if (!stillTogether) openToast("warn", "זהירות: פירקת יחידת 'חייב-עם'");
     }
 
@@ -178,7 +174,6 @@ export default function DoForces() {
   function onEditPos(id, pos)   { setPlayers(ps => ps.map(p => (p.id === id ? { ...p, pos } : p))); }
   function onDelete(id)         { setPlayers(ps => ps.filter(p => p.id !== id)); }
 
-  // סטטיסטיקות כרטיסים
   const teamStats = teams.map(t => ({ avg: avg(t, x => x.rating), sum: +sum(t, x => x.rating).toFixed(1), count: t.length }));
 
   return (
@@ -217,7 +212,7 @@ export default function DoForces() {
                onDrop={e => handleDropOnTeam(e, idx)}>
             <div className="flex items-center justify-between mb-2">
               <div className="text-slate-200 font-medium">קבוצה {idx + 1}</div>
-              <div className="text-xs text-slate-300">ממוצע {teamStats[idx].avg} | סכ\"כ {teamStats[idx].sum} | {teamStats[idx].count} שחקנים</div>
+              <div className="text-xs text-slate-300">ממוצע {teamStats[idx].avg} | סכ"כ {teamStats[idx].sum} | {teamStats[idx].count} שחקנים</div>
             </div>
             <ul className="space-y-1 min-h-[120px]">
               {team.map(p => (
@@ -270,7 +265,7 @@ export default function DoForces() {
                               className="bg-[#0f1a2e] border border-[#24324a] rounded px-2 py-1">
                         <option>GK</option><option>DF</option><option>MF</option><option>FW</option>
                       </select>
-                      <input type="number" step="0.5" min={0} max={10} defaultValue={p.rating}
+                      <input type="number" step="0.5" min="0" max="10" defaultValue={p.rating}
                              onBlur={e => onEditRating(p.id, e.target.value)}
                              className="w-20 bg-[#0f1a2e] border border-[#24324a] rounded px-2 py-1" />
                     </div>
