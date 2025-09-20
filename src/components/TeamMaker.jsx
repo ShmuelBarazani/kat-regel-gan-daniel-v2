@@ -1,559 +1,168 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+// src/components/TeamMaker.jsx
+// מסך "עשה כוחות": בחירת מספר קבוצות, יצירת כוחות מאוזנים לפי ציונים,
+// כיבוד mustWith/avoidWith, עריכת "משחק?" ו"ציון" לפני יצירה, ותצוגת קבוצות עם סטטיסטיקות.
 
-/**
- * Kat Regel – TeamMaker.jsx (גרסת שחזור מלאה)
- * ---------------------------------------------------------
- * מה יש כאן:
- * 1) טבלת שחקנים מלאה עם מיון ע"י לחיצה על כותרת עמודה
- * 2) בחירת "משחק?" בכל שורה – toggle שנשמר ל-localStorage
- *    ברירת מחדל: לפי הקובץ; ואם אין – לא משחק
- * 3) שדות "חייב עם" / "לא עם" – עריכה מהירה (comma separated), נשמר ל-localStorage
- * 4) כפתור "עשה כוחות" עם חלוקה לקבוצות מאוזנות (ציון/עמדות), בהתחשבות בהעדפות
- * 5) ה‑UI ב-RTL עם ערכת הצבעים שנראית בתמונה (כהה‑ירוק)
- * 6) טעינת נתונים: קודם localStorage; אם אין – ינסה להביא "/players.json" (לשים ב/public)
- * 7) אין תלות ב-Tailwind או ספריות חיצוניות – קובץ יחיד להדבקה
- * ---------------------------------------------------------
- */
+import React, { useEffect, useMemo, useState } from "react";
+import { getPlayers, setPlayers, getTeamCount, setTeamCount, saveTeamsSnapshot } from "../lib/storage";
 
-// נתיב ברירת מחדל לקובץ השחקנים כאשר מריצים דרך Vite/CRA – שים את players.json בתוך public/
-const PLAYERS_JSON_URL = "/players.json";
-
-// מפתחות אחסון מקומי
-const LS_KEYS = {
-  players: "katregel_players_v2",
-  prefs: "katregel_prefs_v2", // כאן נשמרים משחק?/חייב/לא עם
+const styles = {
+  page: { direction: "rtl", maxWidth: 1200, margin: "20px auto", padding: "0 12px", color: "#E8EEFC" },
+  toolbar: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 12 },
+  pillBtn: { padding: "6px 12px", borderRadius: 999, background: "#27c463", border: "none", color: "#0b1220", fontWeight: 700, cursor: "pointer" },
+  input: { padding: "6px 10px", borderRadius: 8, border: "1px solid #24324a", background: "#0f1a2e", color: "#E8EEFC" },
+  tableWrap: { overflow: "auto", borderRadius: 12, border: "1px solid #24324a", marginTop: 10 },
+  th: { position: "sticky", top: 0, background: "#0f1a2e", color: "#9fb0cb", textAlign: "right", padding: "10px 8px", borderBottom: "1px solid #24324a", fontWeight: 700, whiteSpace: "nowrap" },
+  td: { textAlign: "right", padding: "8px", borderBottom: "1px solid #1b2941" },
+  grid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: 12, marginTop: 14 },
+  card: { border: "1px solid #24324a", borderRadius: 12, padding: 12, background: "#0f1a2e" },
+  teamTitle: { marginTop: 0, marginBottom: 8 },
+  listItem: { display: "flex", justifyContent: "space-between", padding: "6px 8px", borderBottom: "1px solid #1b2941" },
+  stat: { color: "#9fb0cb", fontSize: 13 },
 };
 
-// עמודות הטבלה
-const COLUMNS = [
-  { key: "active", label: "משחק?", width: 72, sortable: true },
-  { key: "name", label: "שם", width: 220, sortable: true },
-  { key: "pos", label: "עמדה", width: 96, sortable: true },
-  { key: "rating", label: "ציון", width: 96, sortable: true },
-  { key: "mustWith", label: "חייב עם", width: 220, sortable: true },
-  { key: "avoidWith", label: "לא עם", width: 220, sortable: true },
-];
-
-// עזר: ניקוי שמות + פיצול מחרוזת לרשימה
-function normalizeListInput(text) {
-  if (!text) return [];
-  return text
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
-// עזר: הצגת רשימת שמות כתגים קומפקטיים
-function Chips({ items }) {
-  if (!items?.length) return <span className="muted">—</span>;
-  return (
-    <span className="chips">
-      {items.map((x) => (
-        <span className="chip" key={x} title={x}>
-          {x}
-        </span>
-      ))}
-    </span>
-  );
-}
-
 export default function TeamMaker() {
-  const [players, setPlayers] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [sort, setSort] = useState({ key: "name", dir: "asc" });
-
-  // הגדרות חלוקה לקבוצות
-  const [numTeams, setNumTeams] = useState(4);
+  const [players, setPlayersState] = useState([]);
+  const [teamCount, setTeamCountState] = useState(4);
   const [teams, setTeams] = useState([]);
 
-  // טעינה ראשונית: קודם מה-localStorage, אחרת מ-players.json
   useEffect(() => {
-    (async () => {
-      try {
-        const cachedPlayers = loadPlayersFromLocalStorage();
-        if (cachedPlayers?.length) {
-          setPlayers(cachedPlayers);
-          setLoading(false);
-          return;
-        }
-        const fromJson = await fetchPlayersFromJson();
-        setPlayers(fromJson);
-      } catch (e) {
-        console.error("שגיאה בטעינת שחקנים:", e);
-        setPlayers([]);
-      } finally {
-        setLoading(false);
-      }
-    })();
+    const list = getPlayers();
+    setPlayersState(Array.isArray(list) ? list : []);
+    setTeamCountState(getTeamCount());
   }, []);
 
-  // שמירה אוטומטית של השחקנים (כולל ה-preferences) לכל שינוי
-  useEffect(() => {
-    if (!loading) savePlayersToLocalStorage(players);
-  }, [players, loading]);
+  useEffect(() => setPlayers(players), [players]);
 
-  // פונקציית מיון בעת לחיצה על כותרת
-  function onHeaderClick(colKey) {
-    if (!COLUMNS.find((c) => c.key === colKey)?.sortable) return;
-    setSort((prev) => {
-      const dir = prev.key === colKey && prev.dir === "asc" ? "desc" : "asc";
-      return { key: colKey, dir };
-    });
-  }
+  const actives = useMemo(() => players.filter((p) => p.active !== false), [players]);
 
-  // players ממוין לתצוגה
-  const sortedPlayers = useMemo(() => {
-    const arr = [...players];
-    const { key, dir } = sort;
-    arr.sort((a, b) => {
-      let va = a[key];
-      let vb = b[key];
-      // לטפל בעמודות מורכבות
-      if (key === "mustWith" || key === "avoidWith") {
-        va = (va || []).join(", ");
-        vb = (vb || []).join(", ");
-      }
-      if (key === "active") {
-        va = a.active ? 1 : 0;
-        vb = b.active ? 1 : 0;
-      }
-      if (typeof va === "string") va = va.toLowerCase();
-      if (typeof vb === "string") vb = vb.toLowerCase();
-      if (va < vb) return dir === "asc" ? -1 : 1;
-      if (va > vb) return dir === "asc" ? 1 : -1;
-      return 0;
-    });
-    return arr;
-  }, [players, sort]);
+  const setActive = (idx, val) =>
+    setPlayersState(players.map((p, i) => (i === idx ? { ...p, active: val, selected: val } : p)));
+  const setRating = (idx, val) =>
+    setPlayersState(players.map((p, i) => (i === idx ? { ...p, rating: val, r: val } : p)));
 
-  // עדכוני שדה בשחקן
-  function patchPlayer(id, patch) {
-    setPlayers((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
-  }
+  const generate = () => {
+    const n = Math.max(2, Math.min(10, Number(teamCount) || 4));
+    setTeamCount(n);
+    setTeamCountState(n);
 
-  function toggleActive(id) {
-    const p = players.find((x) => x.id === id);
-    if (!p) return;
-    patchPlayer(id, { active: !p.active });
-  }
+    const sorted = [...actives].sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
+    const teamArr = Array.from({ length: n }, () => ({ players: [], sum: 0 }));
+    const nameToTeam = new Map();
 
-  function editListField(id, field) {
-    const p = players.find((x) => x.id === id);
-    const current = (p?.[field] || []).join(", ");
-    const next = window.prompt(
-      field === "mustWith"
-        ? "ערוך רשימת 'חייב עם' (שמות מופרדים בפסיק)"
-        : "ערוך רשימת 'לא עם' (שמות מופרדים בפסיק)",
-      current
-    );
-    if (next === null) return; // ביטול
-    const list = normalizeListInput(next);
-    patchPlayer(id, { [field]: list });
-  }
-
-  function addPlayer() {
-    const name = window.prompt("שם שחקן חדש:");
-    if (!name) return;
-    const pos = (window.prompt("עמדה (GK/DF/MF/FW):", "MF") || "MF").toUpperCase();
-    const rating = parseFloat(window.prompt("ציון (1–10, כולל חצאים):", "6.5") || "6.5") || 6.5;
-    const id = crypto.randomUUID();
-    const newP = {
-      id,
-      name: name.trim(),
-      pos: ["GK", "DF", "MF", "FW"].includes(pos) ? pos : "MF",
-      rating: Math.max(1, Math.min(10, rating)),
-      active: false, // ברירת מחדל אם לא הוגדר בקובץ – לא משחק
-      mustWith: [],
-      avoidWith: [],
+    const scoreTeam = (i, player) => {
+      const t = teamArr[i];
+      let score = t.sum; // מאזנים לפי סכום ציונים
+      const avoid = (player.avoidWith || []).filter(Boolean);
+      for (const x of t.players) if (avoid.includes(x.name)) score += 100; // ענישה חזקה על "לא עם"
+      const must = (player.mustWith || []).filter(Boolean);
+      let hasMust = 0;
+      for (const x of t.players) if (must.includes(x.name)) hasMust++;
+      score -= hasMust * 5; // בונוס על "חייב עם"
+      if (player.pos === "GK" && t.players.some((x) => x.pos === "GK")) score += 10; // שוער אחד לקבוצה
+      return score;
     };
-    setPlayers((prev) => [...prev, newP]);
-  }
 
-  // חלוקה לקבוצות – אלגוריתם מאוזן עם העדפות
-  function buildTeams() {
-    const actives = players.filter((p) => p.active);
-    if (actives.length === 0) {
-      alert("אין שחקנים מסומנים כ'משחק?'");
-      return;
-    }
+    for (const p of sorted) {
+      const must = (p.mustWith || []).filter(Boolean);
+      let preferredIdx = -1;
+      for (const m of must) if (nameToTeam.has(m)) { preferredIdx = nameToTeam.get(m); break; }
+      const candidates = preferredIdx >= 0
+        ? [preferredIdx, ...Array.from({ length: n }, (_, i) => i).filter((i) => i !== preferredIdx)]
+        : Array.from({ length: n }, (_, i) => i);
 
-    const n = Math.max(2, Math.min(8, Number(numTeams) || 4));
-
-    // מטרות לפי עמדות: כמה בערך לכל קבוצה
-    const byPos = groupBy(actives, (p) => p.pos);
-    const posTargets = {};
-    ["GK", "DF", "MF", "FW"].forEach((pos) => {
-      const count = byPos[pos]?.length || 0;
-      posTargets[pos] = Math.ceil(count / n);
-    });
-
-    // יצירת קבוצות ריקות
-    const buckets = new Array(n).fill(0).map((_, i) => ({
-      name: `קבוצה ${i + 1}`,
-      players: [],
-      sum: 0,
-      posCounts: { GK: 0, DF: 0, MF: 0, FW: 0 },
-    }));
-
-    // נעביר קודם את השוערים שיתפזרו
-    const gks = actives.filter((p) => p.pos === "GK").sort((a, b) => b.rating - a.rating);
-    gks.forEach((p, idx) => placePlayerWithHeuristics(p, buckets, posTargets, actives));
-
-    // שאר השחקנים – לפי ציון יורד
-    const rest = actives.filter((p) => p.pos !== "GK").sort((a, b) => b.rating - a.rating);
-    rest.forEach((p) => placePlayerWithHeuristics(p, buckets, posTargets, actives));
-
-    setTeams(buckets);
-  }
-
-  // עזר להצבת שחקן בקבוצה עם קנסות (איזון ציון, עמדות, העדפות)
-  function placePlayerWithHeuristics(p, buckets, posTargets, allActives) {
-    let bestIdx = 0;
-    let bestScore = Infinity;
-
-    const must = new Set((p.mustWith || []).filter(Boolean));
-    const avoid = new Set((p.avoidWith || []).filter(Boolean));
-
-    for (let i = 0; i < buckets.length; i++) {
-      const t = buckets[i];
-
-      // איסור קשה אם יש מי ש"לא עם" כבר בקבוצה
-      const hasAvoid = t.players.some((x) => avoid.has(x.name));
-      if (hasAvoid) continue; // אל תשים פה בכלל
-
-      let cost = 0;
-
-      // איזון ציון: העדף את הקבוצה עם סכום נמוך
-      cost += t.sum * 1.0; // משקולת בסיס
-
-      // יעד עמדות – אם אנחנו חורגים מהיעד, קנס
-      const target = posTargets[p.pos] || 99;
-      const nextCount = t.posCounts[p.pos] + 1;
-      if (nextCount > target) cost += (nextCount - target) * 4; // קנס על חריגה
-
-      // "חייב עם": אם בקבוצה יש לפחות אחד – בונוס; אם אין – קנס קל
-      const hasMust = t.players.some((x) => must.has(x.name));
-      cost += hasMust ? -3 : 3; // בונוס קטן אם מצאנו "חייב"
-
-      // פיזור עמדות: תעדף קבוצה שחסרה בעמדה הזו
-      if (t.posCounts[p.pos] === 0) cost -= 1.5;
-
-      if (cost < bestScore) {
-        bestScore = cost;
-        bestIdx = i;
+      let bestI = 0, best = Infinity;
+      for (const i of candidates) {
+        const s = scoreTeam(i, p);
+        if (s < best) { best = s; bestI = i; }
       }
+      teamArr[bestI].players.push(p);
+      teamArr[bestI].sum += Number(p.rating ?? 0);
+      nameToTeam.set(p.name, bestI);
     }
 
-    const targetTeam = buckets[bestIdx];
-    targetTeam.players.push(p);
-    targetTeam.sum += Number(p.rating) || 0;
-    targetTeam.posCounts[p.pos]++;
-  }
+    setTeams(teamArr);
+    saveTeamsSnapshot({ teams: teamArr.map((t) => t.players.map((p) => p.name)), meta: { teamCount: n } });
+  };
 
-  // עזרי תצוגה
-  function headerArrow(col) {
-    if (sort.key !== col.key) return null;
-    return <span className="arrow">{sort.dir === "asc" ? "▲" : "▼"}</span>;
-  }
-
-  const totalActive = players.filter((p) => p.active).length;
+  const totals = teams.map((t) => t.sum);
+  const avg = totals.length ? (totals.reduce((a, b) => a + b, 0) / totals.length).toFixed(2) : "0.00";
 
   return (
-    <div dir="rtl" className="page">
-      <StyleTag />
-
-      <div className="panel">
-        <div className="panel-header">
-          <h2>שחקנים</h2>
-          <div className="actions">
-            <button className="btn" onClick={addPlayer}>הוסף שחקן</button>
-          </div>
-        </div>
-
-        <div className="table-wrap">
-          <table className="tbl">
-            <thead>
-              <tr>
-                {COLUMNS.map((c) => (
-                  <th
-                    key={c.key}
-                    style={{ width: c.width }}
-                    className={c.sortable ? "sortable" : ""}
-                    onClick={() => onHeaderClick(c.key)}
-                    title={c.sortable ? "לחץ למיון" : ""}
-                  >
-                    <div className="th-flex">
-                      <span>{c.label}</span>
-                      {headerArrow(c)}
-                    </div>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td colSpan={COLUMNS.length} className="muted center">
-                    טוען שחקנים…
-                  </td>
-                </tr>
-              ) : sortedPlayers.length ? (
-                sortedPlayers.map((p) => (
-                  <tr key={p.id}>
-                    {/* משחק? */}
-                    <td className="center">
-                      <input
-                        type="checkbox"
-                        checked={!!p.active}
-                        onChange={() => toggleActive(p.id)}
-                      />
-                    </td>
-
-                    {/* שם */}
-                    <td>
-                      <input
-                        className="inp"
-                        value={p.name}
-                        onChange={(e) => patchPlayer(p.id, { name: e.target.value })}
-                      />
-                    </td>
-
-                    {/* עמדה */}
-                    <td>
-                      <select
-                        className="inp"
-                        value={p.pos}
-                        onChange={(e) => patchPlayer(p.id, { pos: e.target.value })}
-                      >
-                        <option>GK</option>
-                        <option>DF</option>
-                        <option>MF</option>
-                        <option>FW</option>
-                      </select>
-                    </td>
-
-                    {/* ציון */}
-                    <td>
-                      <input
-                        className="inp"
-                        type="number"
-                        step={0.5}
-                        min={1}
-                        max={10}
-                        value={p.rating}
-                        onChange={(e) =>
-                          patchPlayer(p.id, { rating: Number(e.target.value) })
-                        }
-                      />
-                    </td>
-
-                    {/* חייב עם */}
-                    <td>
-                      <div className="cell-tags">
-                        <Chips items={p.mustWith} />
-                        <button
-                          className="pill"
-                          onClick={() => editListField(p.id, "mustWith")}
-                          title="ערוך רשימת 'חייב עם'"
-                        >
-                          ערוך
-                        </button>
-                      </div>
-                    </td>
-
-                    {/* לא עם */}
-                    <td>
-                      <div className="cell-tags">
-                        <Chips items={p.avoidWith} />
-                        <button
-                          className="pill warn"
-                          onClick={() => editListField(p.id, "avoidWith")}
-                          title="ערוך רשימת 'לא עם'"
-                        >
-                          ערוך
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={COLUMNS.length} className="muted center">
-                    אין שחקנים
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+    <div style={styles.page}>
+      <div style={styles.toolbar}>
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+          <span>מס׳ קבוצות:</span>
+          <select value={teamCount} onChange={(e) => setTeamCountState(Number(e.target.value))} style={styles.input}>
+            {Array.from({ length: 10 }, (_, i) => i + 2).map((x) => (
+              <option key={x} value={x}>{x}</option>
+            ))}
+          </select>
+        </label>
+        <button style={styles.pillBtn} onClick={generate}>עשה כוחות</button>
       </div>
 
-      {/* אזור חלוקה לקבוצות */}
-      <div className="panel">
-        <div className="panel-header">
-          <h2>קבוצות למחזור</h2>
-          <div className="actions">
-            <span className="muted">מסומנים למשחק: {totalActive}</span>
-            <label className="inline">
-              <span>מס' קבוצות:</span>
-              <select
-                className="inp small"
-                value={numTeams}
-                onChange={(e) => setNumTeams(Number(e.target.value))}
-              >
-                {[2, 3, 4, 5, 6, 7, 8].map((n) => (
-                  <option key={n} value={n}>
-                    {n}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button className="btn accent" onClick={buildTeams}>עשה כוחות</button>
-          </div>
-        </div>
+      {/* טבלת הכנה לפני יצירה */}
+      <div style={styles.tableWrap}>
+        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 800 }}>
+          <thead>
+            <tr>
+              <th style={{ ...styles.th, width: 90 }}>משחק?</th>
+              <th style={{ ...styles.th, width: 240 }}>שם</th>
+              <th style={{ ...styles.th, width: 100 }}>עמדה</th>
+              <th style={{ ...styles.th, width: 100 }}>ציון</th>
+              <th style={styles.th}>חייב עם</th>
+              <th style={styles.th}>לא עם</th>
+            </tr>
+          </thead>
+          <tbody>
+            {players.map((p, idx) => (
+              <tr key={idx}>
+                <td style={styles.td}>
+                  <input type="checkbox" checked={p.active !== false}
+                         onChange={(e) => setActive(idx, e.target.checked)} />
+                </td>
+                <td style={styles.td}>{p.name}</td>
+                <td style={styles.td}>{labelPos(p.pos)}</td>
+                <td style={styles.td}>
+                  <input type="number" step="0.5" min="1" max="10" value={Number(p.rating ?? 6)}
+                         onChange={(e) => setRating(idx, Number(e.target.value))}
+                         style={{ ...styles.input, width: 90, textAlign: "center" }} />
+                </td>
+                <td style={styles.td}>{p.mustWith?.length ? p.mustWith.join(", ") : "—"}</td>
+                <td style={styles.td}>{p.avoidWith?.length ? p.avoidWith.join(", ") : "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
-        {teams?.length ? (
-          <div className="teams-grid">
-            {teams.map((t) => (
-              <div key={t.name} className="team-card">
-                <div className="team-head">
-                  <div className="team-title">{t.name}</div>
-                  <div className="team-meta">
-                    <span>
-                      סה"כ: {t.sum.toFixed(2)} | ממוצע: {(
-                        t.sum / Math.max(1, t.players.length)
-                      ).toFixed(2)}
-                    </span>
-                  </div>
-                </div>
-                <div className="team-body">
-                  {t.players.length ? (
-                    <ul>
-                      {t.players.map((p) => (
-                        <li key={p.id}>
-                          <span className="pos">{p.pos}</span>
-                          <span className="nm">{p.name}</span>
-                          <span className="rt">{Number(p.rating).toFixed(1)}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <div className="muted">אין שחקנים</div>
-                  )}
+      {/* תצוגת כוחות */}
+      {teams.length > 0 && (
+        <>
+          <div style={{ marginTop: 14, color: "#9fb0cb" }}>
+            ממוצע סה״כ: {avg} | טווח: {totals.length ? Math.min(...totals).toFixed(2) : "0"}–{totals.length ? Math.max(...totals).toFixed(2) : "0"}
+          </div>
+          <div style={styles.grid}>
+            {teams.map((t, i) => (
+              <div key={i} style={styles.card}>
+                <h3 style={styles.teamTitle}>קבוצה {i + 1} <span style={styles.stat}>| סה״כ: {t.sum.toFixed(2)}</span></h3>
+                <div>
+                  {t.players.map((p) => (
+                    <div key={p.name} style={styles.listItem}>
+                      <span>{p.name}</span>
+                      <span className="muted">{Number(p.rating ?? 0).toFixed(1)}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
             ))}
           </div>
-        ) : (
-          <div className="muted" style={{ padding: "8px 12px" }}>
-            גרור שחקן מסומן אל קבוצה; לגרירה החוצה גרור לכאן (בקרוב). בינתיים – השתמש ב"עשה כוחות" לבניה אוטומטית.
-          </div>
-        )}
-      </div>
+        </>
+      )}
     </div>
   );
 }
 
-// ---------- אחסון/טעינה ----------
-async function fetchPlayersFromJson() {
-  const res = await fetch(PLAYERS_JSON_URL);
-  if (!res.ok) throw new Error("טעינת players.json נכשלה");
-  const raw = await res.json();
-
-  // תן ID לכל שחקן, active כברירת מחדל לפי הקובץ; ואם אין – false
-  return (raw || []).map((p) => ({
-    id: p.id || crypto.randomUUID(),
-    name: p.name?.trim() || "",
-    pos: p.pos || "MF",
-    rating: Number(p.rating) || 6.5,
-    active: typeof p.active === "boolean" ? p.active : false, // אם אין – לא משחק
-    mustWith: Array.isArray(p.mustWith) ? p.mustWith : [],
-    avoidWith: Array.isArray(p.avoidWith) ? p.avoidWith : [],
-  }));
-}
-
-function loadPlayersFromLocalStorage() {
-  try {
-    const txt = localStorage.getItem(LS_KEYS.players);
-    if (!txt) return null;
-    const arr = JSON.parse(txt);
-    return Array.isArray(arr) ? arr : null;
-  } catch (_) {
-    return null;
-  }
-}
-
-function savePlayersToLocalStorage(players) {
-  try {
-    localStorage.setItem(LS_KEYS.players, JSON.stringify(players));
-  } catch (e) {
-    console.warn("לא הצלחתי לשמור ל-localStorage", e);
-  }
-}
-
-// ---------- קומפוננטת CSS ב-inlined <style> ----------
-function StyleTag() {
-  return (
-    <style>{`
-:root{
-  --bg:#0b1220; --card:#101a2c; --ink:#e8eefc; --muted:#9fb0cb;
-  --edge:#223049; --accent:#1db954; --accent2:#2ea987; --warn:#ff5c7a;
-}
-*{box-sizing:border-box}
-html,body,#root{height:100%}
-body{margin:0;background:var(--bg);color:var(--ink);font-family:Heebo,system-ui,-apple-system,Segoe UI,Roboto,Noto Sans Hebrew,Arial,sans-serif}
-.page{max-width:1200px;margin:28px auto;padding:0 12px}
-
-.panel{background:var(--card);border:1px solid var(--edge);border-radius:14px;margin:14px 0;box-shadow:0 2px 10px rgba(0,0,0,.25)}
-.panel-header{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--edge)}
-.panel-header h2{margin:0;font-size:20px}
-.actions{display:flex;align-items:center;gap:10px}
-.inline{display:inline-flex;align-items:center;gap:6px}
-
-.btn{background:#0f2b1e;border:1px solid #174a33;color:#bff0d5;padding:8px 12px;border-radius:10px;cursor:pointer}
-.btn:hover{filter:brightness(1.06)}
-.btn.accent{background:#0f2a22;border-color:#2e8b72;color:#bff0d5}
-.pill{background:#112333;border:1px solid #29445f;color:#d9e6ff;padding:4px 8px;border-radius:999px;cursor:pointer;font-size:12px}
-.pill.warn{border-color:#704252;color:#ffd6de}
-
-.table-wrap{max-height:440px;overflow:auto;margin:8px 12px 12px}
-.tbl{width:100%;border-collapse:separate;border-spacing:0}
-.tbl thead th{position:sticky;top:0;background:#173b2c;border-bottom:1px solid var(--edge);color:#d7ffe7;padding:10px;text-align:right}
-.tbl thead th.sortable{cursor:pointer}
-.th-flex{display:flex;align-items:center;justify-content:space-between;gap:8px}
-.arrow{opacity:.8;font-size:12px}
-.tbl tbody td{border-bottom:1px solid #132032;padding:8px 10px;vertical-align:middle}
-.center{text-align:center}
-.muted{color:var(--muted)}
-
-.inp{width:100%;background:#0e1523;color:var(--ink);border:1px solid #28344c;border-radius:10px;padding:6px 8px}
-.inp.small{width:auto}
-
-.cell-tags{display:flex;align-items:center;gap:8px}
-.chips{display:flex;flex-wrap:wrap;gap:6px}
-.chip{background:#0e2137;border:1px solid #2b486b;color:#d9e6ff;border-radius:999px;padding:2px 8px;font-size:12px}
-
-.teams-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;padding:12px}
-@media (max-width:1000px){.teams-grid{grid-template-columns:repeat(2,1fr)}}
-@media (max-width:560px){.teams-grid{grid-template-columns:1fr}}
-.team-card{background:#0f1726;border:1px solid #20304a;border-radius:12px;overflow:hidden}
-.team-head{display:flex;align-items:center;justify-content:space-between;background:#14253c;color:#cff; padding:8px 10px;border-bottom:1px solid #20304a}
-.team-title{font-weight:700}
-.team-body{padding:6px 10px}
-.team-body ul{margin:0;padding:0;list-style:none}
-.team-body li{display:grid;grid-template-columns:56px 1fr 56px;gap:8px;padding:6px 0;border-bottom:1px dashed #22334f}
-.team-body li .pos{opacity:.85}
-.team-body li .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.team-body li .rt{text-align:left}
-`}</style>
-  );
-}
-
-// ---------- Utilities ----------
-function groupBy(arr, keyFn) {
-  return arr.reduce((acc, x) => {
-    const k = keyFn(x);
-    (acc[k] ||= []).push(x);
-    return acc;
-  }, {});
+function labelPos(pos) {
+  return pos === "GK" ? "שוער" : pos === "DF" ? "הגנה" : pos === "MF" ? "קישור" : pos === "FW" ? "התקפה" : pos || "—";
 }
