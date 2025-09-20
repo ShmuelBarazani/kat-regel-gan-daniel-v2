@@ -204,3 +204,189 @@ export default function Players() {
           {hideRatings ? "הצג ציונים" : "הסתר ציונים"}
         </button>
         <button style={styles.pillGhost} onClick={() => setSortAsc((v) => !v)}>
+          מיון לפי שם {sortAsc ? "▲" : "▼"}
+        </button>
+        <div style={{ flex: 1 }} />
+        <input
+          placeholder="חיפוש לפי שם…"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          style={{ ...styles.input, minWidth: 220 }}
+        />
+        <button style={styles.pillGhost} onClick={exportPlayersFile}>ייצוא</button>
+        <button style={styles.pillGhost} onClick={openImport}>ייבוא</button>
+        <input ref={fileRef} type="file" accept=".json,.csv,.txt" onChange={onImportFile} hidden />
+      </div>
+
+      <div style={{ marginBottom: 10, color: "#9fb0cb" }}>
+        <b>שחקנים פעילים:</b> {activeCount} / {players.length}
+      </div>
+
+      <div style={styles.tableWrap}>
+        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1000 }}>
+          <thead>
+            <tr>
+              <th style={{ ...styles.th, width: 100 }}>פעולות</th>
+              <th style={styles.th}>לא עם</th>
+              <th style={styles.th}>חייב עם</th>
+              {!hideRatings && <th style={{ ...styles.th, width: 110 }}>ציון</th>}
+              <th style={{ ...styles.th, width: 120 }}>עמדה</th>
+              <th style={{ ...styles.th, width: 260 }}>שם</th>
+              <th style={{ ...styles.th, width: 90 }}>משחק?</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((p, idx) => (
+              <tr key={idx}>
+                <td style={styles.td}>
+                  <button style={styles.danger} onClick={() => remove(idx)}>מחק</button>
+                </td>
+
+                <td style={styles.td}>
+                  <span
+                    style={styles.chip}
+                    onClick={() =>
+                      editNamesList("לא עם (avoidWith)", p.avoidWith, idx)
+                    }
+                  >
+                    {p.avoidWith?.length ? p.avoidWith.join(", ") : "—"} &nbsp; ערוך
+                  </span>
+                </td>
+
+                <td style={styles.td}>
+                  <span
+                    style={styles.chip}
+                    onClick={() =>
+                      editNamesList("חייב עם (mustWith)", p.mustWith, idx)
+                    }
+                  >
+                    {p.mustWith?.length ? p.mustWith.join(", ") : "—"} &nbsp; ערוך
+                  </span>
+                </td>
+
+                {!hideRatings && (
+                  <td style={styles.td}>
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="1"
+                      max="10"
+                      value={toNumberOr(p.rating, 6)}
+                      onChange={(e) => update(idx, { rating: Number(e.target.value) })}
+                      style={{ ...styles.input, width: 90, textAlign: "center" }}
+                    />
+                  </td>
+                )}
+
+                <td style={styles.td}>
+                  <select
+                    value={p.pos || "MF"}
+                    onChange={(e) => update(idx, { pos: e.target.value })}
+                    style={{ ...styles.input, width: 110 }}
+                  >
+                    {POS_OPTIONS.map((o) => (
+                      <option key={o.v} value={o.v}>{o.t}</option>
+                    ))}
+                  </select>
+                </td>
+
+                <td style={styles.td}>
+                  <input
+                    value={p.name || ""}
+                    onChange={(e) => update(idx, { name: e.target.value })}
+                    style={{ ...styles.input, width: "100%" }}
+                    placeholder="שם השחקן"
+                  />
+                </td>
+
+                <td style={styles.td}>
+                  <input
+                    type="checkbox"
+                    checked={p.active !== false}
+                    onChange={(e) => update(idx, { active: e.target.checked })}
+                  />
+                </td>
+              </tr>
+            ))}
+
+            {filtered.length === 0 && (
+              <tr>
+                <td colSpan={7} style={{ ...styles.td, textAlign: "center", color: "#9fb0cb" }}>
+                  אין שחקנים לתצוגה.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ===== עוזרים =====
+function splitList(s) {
+  const list = (s || "")
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+  return { key: s?.includes("avoid") ? "avoidWith" : "mustWith", list };
+}
+
+function toNumberOr(v, d) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : d;
+}
+
+// נרמול כללי של רשימת ייבוא – תומך במבנים שונים
+function normalizeImportedList(arr) {
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .map((raw) => {
+      if (!raw) return null;
+      // תמיכה בשם יחיד (string)
+      if (typeof raw === "string") {
+        return { name: raw, pos: "MF", rating: 6, mustWith: [], avoidWith: [], active: true };
+      }
+      const name = raw.name ?? raw.שם ?? "";
+      if (!name) return null;
+      const pos = raw.pos ?? raw.position ?? raw.עמדה ?? "MF";
+      const rating = toNumberOr(raw.rating ?? raw.ציון, 6);
+      const mustWith = Array.isArray(raw.mustWith) ? raw.mustWith : splitMaybe(raw.חייב_עם || raw.must_with);
+      const avoidWith = Array.isArray(raw.avoidWith) ? raw.avoidWith : splitMaybe(raw.לא_עם || raw.avoid_with);
+      const active = raw.active !== false;
+      return { name, pos, rating, mustWith, avoidWith, active };
+    })
+    .filter(Boolean);
+}
+
+function splitMaybe(v) {
+  if (!v) return [];
+  if (Array.isArray(v)) return v.filter(Boolean);
+  return String(v)
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
+
+function parseCSVorLines(text) {
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const out = [];
+  for (const line of lines) {
+    // פורמט CSV: name,pos,rating
+    const parts = line.split(",").map((x) => x.trim());
+    if (parts.length >= 3 && !isNaN(Number(parts[2]))) {
+      out.push({
+        name: parts[0],
+        pos: parts[1] || "MF",
+        rating: toNumberOr(parts[2], 6),
+        mustWith: [],
+        avoidWith: [],
+        active: true,
+      });
+    } else {
+      // שורה = שם בלבד
+      out.push({ name: line, pos: "MF", rating: 6, mustWith: [], avoidWith: [], active: true });
+    }
+  }
+  return out;
+}
