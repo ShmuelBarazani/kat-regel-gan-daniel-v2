@@ -4,7 +4,7 @@ import { POS } from "../lib/storage.js";
 
 export default function PlayerFormModal({ players, onClose, onSave }) {
   const [name, setName] = useState("");
-  const [pos, setPos]   = useState(POS[1] || "MF");
+  const [pos, setPos] = useState(POS[1] || "MF");
   const [rating, setRating] = useState(6.5);
   const [active, setActive] = useState(true);
   const [mustWith, setMustWith] = useState([]);
@@ -20,23 +20,23 @@ export default function PlayerFormModal({ players, onClose, onSave }) {
       name: name.trim(),
       pos, rating: Number(rating), active,
       mustWith, avoidWith,
-      prefer: mustWith, // תאימות לאחור
+      prefer: mustWith,  // תאימות לאחור
       avoid: avoidWith
     };
     onSave(newPlayer);
   };
 
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={onClose}>
-      <div className="modal" dir="rtl" onClick={(e)=>e.stopPropagation()} style={{maxWidth: 760}}>
+    <div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true">
+      <div className="modal modal-compact" dir="rtl" onClick={(e)=>e.stopPropagation()}>
         <h3 style={{marginBottom: 10}}>שחקן חדש</h3>
-        <form onSubmit={submit} className="grid gap">
-          {/* שם – רוחב מלא */}
-          <label style={{gridColumn:'1 / -1'}}>שם
+        <form onSubmit={submit} className="grid gap-compact">
+          {/* שורה 1 – שם (מלא) */}
+          <label className="col-span-2">שם
             <input className="input" value={name} onChange={e=>setName(e.target.value)} />
           </label>
 
-          {/* שורה שנייה – עמדה / ציון / משחק */}
+          {/* שורה 2 – עמדה / ציון / משחק */}
           <label>עמדה
             <select value={pos} onChange={e=>setPos(e.target.value)}>
               {POS.map(p => <option key={p} value={p}>{p}</option>)}
@@ -49,14 +49,14 @@ export default function PlayerFormModal({ players, onClose, onSave }) {
                    onChange={e=>setRating(e.target.value)} />
           </label>
 
-          <label className="row">משחק?
+          <label className="row-compact">משחק?
             <input type="checkbox" checked={active} onChange={e=>setActive(e.target.checked)} />
           </label>
 
-          {/* שתי רשימות – זו לצד זו */}
+          {/* שורה 3 – שתי רשימות זו לצד זו */}
           <div className="row-col">
             <label>חייב עם</label>
-            <select multiple size={8} className="multi"
+            <select multiple size={7} className="multi compact"
                     value={mustWith}
                     onChange={(e)=>setMustWith(Array.from(e.target.selectedOptions,o=>o.value))}>
               {options.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
@@ -65,14 +65,14 @@ export default function PlayerFormModal({ players, onClose, onSave }) {
 
           <div className="row-col">
             <label>לא עם</label>
-            <select multiple size={8} className="multi"
+            <select multiple size={7} className="multi compact"
                     value={avoidWith}
                     onChange={(e)=>setAvoidWith(Array.from(e.target.selectedOptions,o=>o.value))}>
               {options.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
             </select>
           </div>
 
-          <div className="modal-actions" style={{gridColumn:'1 / -1'}}>
+          <div className="modal-actions col-span-2">
             <button type="button" className="btn" onClick={onClose}>ביטול</button>
             <button type="submit" className="btn primary">שמירה</button>
           </div>
