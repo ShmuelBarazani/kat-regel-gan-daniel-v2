@@ -5,7 +5,6 @@ const POS_OPTIONS = ["GK","DF","MF","FW"];
 
 export default function Players() {
   const [players, setPlayers] = useState([]);
-  const [showActiveOnly, setShowActiveOnly] = useState(false);
   const [sort, setSort] = useState({ key: "name", dir: "asc" });
   const [modalOpen, setModalOpen] = useState(false);
   const [editIdx, setEditIdx] = useState(null);
@@ -27,7 +26,6 @@ export default function Players() {
 
   const data = useMemo(() => {
     let out = [...players];
-    if (showActiveOnly) out = out.filter(p => p.active);
     out.sort((a,b) => {
       const { key, dir } = sort;
       const va = norm(a[key]);
@@ -37,7 +35,7 @@ export default function Players() {
       return 0;
     });
     return out;
-  }, [players, showActiveOnly, sort]);
+  }, [players, sort]);
 
   function norm(v){ if (v === undefined || v === null) return ""; return typeof v === "string" ? v.toLowerCase() : v; }
   function blankForm(){ return { active:false, name:"", pos:"MF", rating:5, mustWith:[], avoidWith:[] }; }
@@ -51,13 +49,13 @@ export default function Players() {
       active: !!p.active,
       name: p.name || "",
       pos: p.pos || "MF",
-      rating: p.rating ?? 5,
-      mustWith: Array.isArray(p.mustWith) ? p.mustWith : splitNames(p.mustWith),
-      avoidWith: Array.isArray(p.avoidWith) ? p.avoidWith : splitNames(p.avoidWith),
+      rating: typeof p.rating === "number" ? p.rating : Number(p.rating) || 0,
+      mustWith: Array.isArray(p.mustWith) ? p.mustWith : splitCsv(p.mustWith),
+      avoidWith: Array.isArray(p.avoidWith) ? p.avoidWith : splitCsv(p.avoidWith),
     });
     setModalOpen(true);
   }
-  function splitNames(v){ if (!v) return []; if (Array.isArray(v)) return v; return String(v).split(",").map(s=>s.trim()).filter(Boolean); }
+  function splitCsv(v){ if (!v) return []; if (Array.isArray(v)) return v; return String(v).split(",").map(s=>s.trim()).filter(Boolean); }
   function joinNames(arr){ return (arr || []).join(", "); }
 
   function onSaveForm(e){
@@ -71,8 +69,8 @@ export default function Players() {
       name: form.name.trim(),
       pos: form.pos,
       rating: Number(form.rating) || 0,
-      mustWith: splitNames(form.mustWith),
-      avoidWith: splitNames(form.avoidWith),
+      mustWith: Array.isArray(form.mustWith) ? form.mustWith : splitCsv(form.mustWith),
+      avoidWith: Array.isArray(form.avoidWith) ? form.avoidWith : splitCsv(form.avoidWith),
     };
     const next = [...players];
     if (editIdx === null) next.push(record); else next[editIdx] = record;
@@ -83,9 +81,21 @@ export default function Players() {
   function toggleActive(id){ const next = players.map(p => p.id===id ? {...p, active:!p.active} : p); setPlayers(next); savePlayers(next); }
   function setSortCol(key){ setSort(prev => prev.key === key ? ({ key, dir: prev.dir==="asc"?"desc":"asc" }) : ({ key, dir:"asc" })); }
 
+  // רשימות הבחירה למודל — כל השמות מלבד השם שמוזן כרגע
+  const selectableNames = useMemo(() => {
+    const curr = form.name?.trim?.() || "";
+    return players.map(p => p.name).filter(n => n && n !== curr);
+  }, [players, form.name]);
+
   return (
     <div className="page" dir="rtl" style={{maxWidth:1180, margin:"24px auto", padding:"0 12px"}}>
-      <HeaderBar activeCount={activeCount} showActiveOnly={showActiveOnly} setShowActiveOnly={setShowActiveOnly} onAdd={openAdd} />
+      <div style={{display:"flex", alignItems:"center", gap:12, justifyContent:"space-between", margin:"0 0 10px"}}>
+        <div style={{display:"flex", alignItems:"center", gap:12}}>
+          <button className="btn primary" onClick={openAdd}>הוסף שחקן</button>
+        </div>
+        <div style={{color:"#9fb0cb"}}>שחקנים פעילים: {activeCount}</div>
+      </div>
+
       <div className="card" style={{background:"#0f1a2e", border:"1px solid #24324a", borderRadius:16, padding:12}}>
         <div style={{maxHeight:"64vh", overflow:"auto"}}>
           <table style={{width:"100%", borderCollapse:"separate", borderSpacing:0, direction:"rtl"}}>
@@ -127,17 +137,54 @@ export default function Players() {
         <div role="dialog" aria-modal="true" style={modalWrap}>
           <div style={modalCard}>
             <h3 style={{margin:"0 0 12px"}}>{editIdx===null ? "הוסף שחקן" : "ערוך שחקן"}</h3>
+
+            {/* שורה אחת: משחק? | שם | עמדה | ציון */}
             <form onSubmit={onSaveForm}>
-              <div className="grid" style={{display:"grid", gridTemplateColumns:"120px 1fr", gap:10, alignItems:"center"}}>
-                <label>משחק?</label><input type="checkbox" checked={form.active} onChange={e=>setForm(f=>({ ...f, active:e.target.checked }))} />
-                <label>שם</label><input ref={firstFocusRef} type="text" value={form.name} onChange={e=>setForm(f=>({ ...f, name:e.target.value }))} placeholder="שם שחקן" />
-                <label>עמדה</label>
-                <select value={form.pos} onChange={e=>setForm(f=>({ ...f, pos:e.target.value }))}>{POS_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}</select>
-                <label>ציון</label><input type="number" step="0.5" min="1" max="10" value={form.rating} onChange={e=>setForm(f=>({ ...f, rating:e.target.value }))} />
-                <label>חייב עם</label><input type="text" value={Array.isArray(form.mustWith)?form.mustWith.join(", "):form.mustWith||""} onChange={e=>setForm(f=>({ ...f, mustWith:e.target.value }))} placeholder="שמות מופרדים בפסיקים" />
-                <label>לא עם</label><input type="text" value={Array.isArray(form.avoidWith)?form.avoidWith.join(", "):form.avoidWith||""} onChange={e=>setForm(f=>({ ...f, avoidWith:e.target.value }))} placeholder="שמות מופרדים בפסיקים" />
+              <div style={{display:"grid", gridTemplateColumns:"80px 1fr 120px 120px", gap:10, alignItems:"center"}}>
+                <label style={{justifySelf:"start"}}>משחק?</label>
+                <input ref={firstFocusRef} type="checkbox" checked={form.active} onChange={e=>setForm(f=>({ ...f, active:e.target.checked }))} />
+
+                <input type="text" value={form.name} onChange={e=>setForm(f=>({ ...f, name:e.target.value }))} placeholder="שם שחקן" />
+
+                <select value={form.pos} onChange={e=>setForm(f=>({ ...f, pos:e.target.value }))}>
+                  {POS_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+
+                <input type="number" step="0.5" min="1" max="10" value={form.rating}
+                       onChange={e=>setForm(f=>({ ...f, rating:e.target.value }))} />
               </div>
-              <div style={{marginTop:16, display:"flex", gap:8}}><button type="submit" className="btn primary">שמור</button><button type="button" className="btn ghost" onClick={()=>setModalOpen(false)}>בטל</button></div>
+
+              {/* מתחת: רשימות בחירה מרובות */}
+              <div style={{marginTop:12, display:"grid", gridTemplateColumns:"1fr 1fr", gap:12}}>
+                <div>
+                  <div style={{marginBottom:6}}>חייב עם</div>
+                  <select multiple size={8}
+                    value={Array.isArray(form.mustWith)?form.mustWith:[]}
+                    onChange={(e)=>{
+                      const vals = Array.from(e.target.selectedOptions).map(o=>o.value);
+                      setForm(f=>({ ...f, mustWith: vals }));
+                    }}>
+                    {selectableNames.map(n => <option key={"mw_"+n} value={n}>{n}</option>)}
+                  </select>
+                </div>
+
+                <div>
+                  <div style={{marginBottom:6}}>לא עם</div>
+                  <select multiple size={8}
+                    value={Array.isArray(form.avoidWith)?form.avoidWith:[]}
+                    onChange={(e)=>{
+                      const vals = Array.from(e.target.selectedOptions).map(o=>o.value);
+                      setForm(f=>({ ...f, avoidWith: vals }));
+                    }}>
+                    {selectableNames.map(n => <option key={"aw_"+n} value={n}>{n}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div style={{marginTop:16, display:"flex", gap:8}}>
+                <button type="submit" className="btn primary">שמור</button>
+                <button type="button" className="btn ghost" onClick={()=>setModalOpen(false)}>בטל</button>
+              </div>
             </form>
           </div>
         </div>
@@ -151,22 +198,9 @@ export default function Players() {
         .btn.ghost{background:transparent}
         thead tr{background:#105340;color:#e8eefc}
         th, td{font-size:14px}
+        select[multiple]{width:100%; min-height:200px; background:#0b1220; color:#e8eefc; border:1px solid #24324a; border-radius:10px; padding:6px}
+        input, select{background:#0b1220; color:#e8eefc; border:1px solid #24324a; border-radius:10px; padding:6px}
       `}</style>
-    </div>
-  );
-}
-
-function HeaderBar({ activeCount, showActiveOnly, setShowActiveOnly, onAdd }){
-  return (
-    <div style={{display:"flex", alignItems:"center", gap:12, justifyContent:"space-between", margin:"0 0 10px"}}>
-      <div style={{display:"flex", alignItems:"center", gap:12}}>
-        <button className="btn primary" onClick={onAdd}>הוסף שחקן</button>
-        <label style={{display:"inline-flex", alignItems:"center", gap:6}}>
-          <input type="checkbox" checked={showActiveOnly} onChange={e=>setShowActiveOnly(e.target.checked)} />
-          הצג פעילים בלבד
-        </label>
-      </div>
-      <div style={{color:"#9fb0cb"}}>שחקנים פעילים: {activeCount}</div>
     </div>
   );
 }
@@ -182,4 +216,4 @@ function Th({ children, onClick, sorted, dir }){
 
 const cellStyle = { padding:"10px 12px", verticalAlign:"middle", color:"#e8eefc" };
 const modalWrap = { position:"fixed", inset:0, background:"rgba(0,0,0,.5)", display:"grid", placeItems:"center", zIndex:1000 };
-const modalCard = { width:520, maxWidth:"92vw", background:"#0f1a2e", border:"1px solid #24324a", borderRadius:16, padding:16, color:"#e8eefc" };
+const modalCard = { width:680, maxWidth:"95vw", background:"#0f1a2e", border:"1px solid #24324a", borderRadius:16, padding:16, color:"#e8eefc" };
