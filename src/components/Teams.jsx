@@ -1,153 +1,244 @@
 // src/components/Teams.jsx
-import React, { useEffect, useMemo, useState } from "react";
-import {
-  getPlayers, setPlayers,
-  getTeamsState, setTeamsState,
-  addRound, countActive
-} from "../lib/storage";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
+import { loadJSON, saveJSON, useStorage, STORAGE_KEYS } from "../lib/storage";
 
-const emptyGroups = (n) => Array.from({ length: n }, () => []);
+// עוזר קטן לפורמט
+const posNames = { GK: "GK", DF: "DF", MF: "MF", FW: "FW" };
+
+function average(sum, n) {
+  return n === 0 ? 0 : +(sum / n).toFixed(2);
+}
+
+// אלגוריתם פשוט לאיזון: ממיינים ציון יורד,
+// ומשבצים כל פעם לקבוצה שהסכום שלה הכי נמוך.
+function buildBalancedTeams(players, teamCount) {
+  const teams = Array.from({ length: teamCount }, () => ({
+    players: [],
+    sum: 0,
+  }));
+
+  const sorted = [...players].sort((a, b) => b.r - a.r);
+  for (const p of sorted) {
+    const idx = teams.reduce(
+      (best, t, i) => (t.sum < teams[best].sum ? i : best),
+      0
+    );
+    teams[idx].players.push(p);
+    teams[idx].sum += p.r;
+  }
+  return teams;
+}
 
 export default function Teams() {
-  const [players, setLocalPlayers] = useState(getPlayers([]));
-  const [teamCount, setTeamCount]   = useState(getTeamsState().teamCount || 4);
-  const [groups, setGroups]         = useState(() => {
-    const s = getTeamsState();
-    return s.groups?.length ? s.groups : emptyGroups(s.teamCount || 4);
-  });
+  const [players, setPlayers] = useState([]);
+  const [teamCount, setTeamCount] = useState(4);
+  const [teams, setTeams] = useState([]);              // תצוגת הקבוצות
+  const [saved, setSaved] = useStorage(STORAGE_KEYS.LAST_TEAMS, null);
+  const [loading, setLoading] = useState(false);
 
-  // אם מישהו עדכן שחקנים במסך “שחקנים” — נטען שוב
+  // טעינת שחקנים מקובץ public/players.json
   useEffect(() => {
-    setLocalPlayers(getPlayers([]));
+    let mounted = true;
+    (async () => {
+      const res = await fetch("/players.json?ts=" + Date.now());
+      const data = await res.json();
+      if (!mounted) return;
+      // נשמור "משחק?" ברירת מחדל מהקובץ (selected) – אם קיים
+      setPlayers(
+        data.map((p) => ({
+          id: p.id,
+          name: p.name,
+          pos: p.pos,
+          r: Number(p.r),
+          selected: Boolean(p.selected ?? true),
+        }))
+      );
+    })();
+    return () => (mounted = false);
   }, []);
 
-  const active = useMemo(() => players.filter(p => p.play), [players]);
-  const activeCount = active.length;
+  // אם יש מחזור שמור – נטען אותו (כולל מספר קבוצות)
+  useEffect(() => {
+    if (!saved || !players.length) return;
+    if (saved.teamCount) setTeamCount(saved.teamCount);
 
-  // שמור מצב כוחות כדי שלא ייעלם כשחוזרים בין טאבים
-  useEffect(() => { setTeamsState({ teamCount, groups }); }, [teamCount, groups]);
+    if (Array.isArray(saved.groups) && saved.groups.length) {
+      const id2player = new Map(players.map((p) => [p.id, p]));
+      const restored = saved.groups.map((groupIds) => {
+        const ps = groupIds
+          .map((id) => id2player.get(id))
+          .filter(Boolean);
+        return { players: ps, sum: ps.reduce((s, x) => s + x.r, 0) };
+      });
+      setTeams(restored);
+    }
+  }, [saved, players]);
 
-  const reshuffle = () => {
-    // אלגוריתם פשוט: מיון יורד לפי ציון וחלוקה סיבובית
-    const ordered = [...active].sort((a,b) => b.r - a.r);
-    const g = emptyGroups(teamCount);
-    ordered.forEach((p, i) => g[i % teamCount].push(p.id));
-    setGroups(g);
-  };
+  const playing = useMemo(
+    () => players.filter((p) => p.selected),
+    [players]
+  );
 
-  const saveRound = () => {
-    addRound({
-      id: crypto.randomUUID(),
-      at: new Date().toISOString(),
+  const selectedCount = playing.length;
+
+  // הפקת קבוצות – חישוב מלא ואז סט יחיד (אין ריצוד)
+  const makeTeams = useCallback(() => {
+    setLoading(true);
+    // חישוב
+    const next = buildBalancedTeams(playing, teamCount);
+    // שמירה
+    const groupsForSave = next.map((t) => t.players.map((p) => p.id));
+    saveJSON(STORAGE_KEYS.LAST_TEAMS, {
       teamCount,
-      activeCount,
-      groups,
+      groups: groupsForSave,
+      savedAt: Date.now(),
     });
+    setSaved({
+      teamCount,
+      groups: groupsForSave,
+      savedAt: Date.now(),
+    });
+    // הצבה בסטייט – ברגע אחד (ללא מחיקות ביניים)
+    setTeams(next);
+    setLoading(false);
+  }, [playing, teamCount, setSaved]);
+
+  // החלפת "משחק?" – נשמרת במצב המחזור (LocalStorage)
+  const togglePlaying = (id) => {
+    setPlayers((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, selected: !p.selected } : p))
+    );
   };
 
-  const move = (fromIdx, toIdx, playerId) => {
-    setGroups(prev => {
-      const next = prev.map(x => [...x]);
-      const i = next[fromIdx].indexOf(playerId);
-      if (i > -1) next[fromIdx].splice(i,1);
-      next[toIdx].push(playerId);
-      return next;
+  // סדר תצוגת הטבלה – שם/תפקיד/ציון
+  const [sort, setSort] = useState({ by: "name", dir: "asc" });
+  const sortedPlayers = useMemo(() => {
+    const data = [...players];
+    const { by, dir } = sort;
+    data.sort((a, b) => {
+      const mult = dir === "asc" ? 1 : -1;
+      if (by === "name") return a.name.localeCompare(b.name) * mult;
+      if (by === "pos") return a.pos.localeCompare(b.pos) * mult;
+      if (by === "r") return (a.r - b.r) * mult;
+      return 0;
     });
-  };
-
-  const readable = (id) => players.find(p => p.id === id)?.name ?? id;
+    return data;
+  }, [players, sort]);
 
   return (
-    <section className="page teams" dir="rtl">
-      {/* כותרת ממורכזת מעל הבקרה */}
-      <h1 className="page-title center">קטרגל גן-דניאל ⚽</h1>
+    <div className="page-teams">
+      {/* שורת שליטה עליונה */}
+      <div className="topbar">
+        <div className="title">קטרגל גן-דניאל</div>
 
-      <div className="toolbar centered">
-        <div className="inline">
-          <label>מס’ קבוצות</label>
-          <select className="select"
-            value={teamCount}
-            onChange={(e) => {
-              const n = Number(e.target.value);
-              setTeamCount(n);
-              setGroups(emptyGroups(n));
-            }}>
-            {[2,3,4,5,6].map(n => <option key={n} value={n}>{n}</option>)}
-          </select>
-        </div>
-
-        <button className="btn primary" onClick={reshuffle}>עשה כוחות</button>
-        <button className="btn" onClick={saveRound}>שמור מחזור</button>
-
-        <div className="spacer" />
-        <div className="muted">
-          מסומנים למשחק: <b>{activeCount}</b> / {players.length}
-        </div>
-      </div>
-
-      {/* כוחות מעל הטבלה */}
-      <div className="groups-grid">
-        {groups.map((g, gi) => (
-          <div className="group-card" key={gi}>
-            <div className="group-title">קבוצה {gi+1}</div>
-            <ul className="group-list">
-              {g.map(pid => (
-                <li key={pid}>
-                  <span className="name">{readable(pid)}</span>
-                  {/* פעולות גרירה בין קבוצות (חצים קטנים) */}
-                  <span className="move">
-                    {gi>0 && <button className="icon" onClick={() => move(gi, gi-1, pid)}>◀</button>}
-                    {gi<groups.length-1 && <button className="icon" onClick={() => move(gi, gi+1, pid)}>▶</button>}
-                  </span>
-                </li>
+        <div className="controls">
+          <label className="ctrl">
+            <span>מס’ קבוצות</span>
+            <select
+              value={teamCount}
+              onChange={(e) => setTeamCount(Number(e.target.value))}
+            >
+              {[2, 3, 4, 5, 6].map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
               ))}
-            </ul>
+            </select>
+          </label>
+
+          <button className="btn primary" onClick={makeTeams} disabled={loading}>
+            {loading ? "מחשב…" : "עשה כוחות"}
+          </button>
+
+          <div className="chip muted">
+            שחקנים פעילים: <b>{selectedCount}</b>
           </div>
-        ))}
+        </div>
       </div>
 
-      {/* טבלת שחקנים עם גלילה פנימית */}
-      <div className="subbar top-gap">
-        <span>שחקנים פעילים: <b>{activeCount}</b> / {players.length}</span>
+      {/* קבוצות למחזור – מעל הטבלה */}
+      <div className="teams-grid">
+        {teams.map((t, i) => {
+          const avg = average(t.sum, t.players.length);
+          return (
+            <div key={i} className="team-card">
+              <div className="team-head">
+                <div>קבוצה {i + 1}</div>
+                <div className="avg">ממוצע {avg}</div>
+              </div>
+              <ul className="team-list">
+                {t.players.map((p) => (
+                  <li key={p.id} className="team-item">
+                    <span className="pos">{posNames[p.pos] || p.pos}</span>
+                    <span className="name">{p.name}</span>
+                    <span className="rate">{p.r}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          );
+        })}
+        {!teams.length && (
+          <div className="hint">לחץ “עשה כוחות” ליצירת חלוקה חדשה ומאוזנת.</div>
+        )}
       </div>
 
-      <div className="table-wrapper players-scroll">
-        <table className="table players-table">
-          <thead>
-            <tr>
-              <th style={{width:72}}>משחק?</th>
-              <th style={{minWidth:220}}>שם</th>
-              <th style={{width:110}}>עמדה</th>
-              <th style={{width:110}}>ציון</th>
-              <th>חייב עם</th>
-              <th>לא עם</th>
-            </tr>
-          </thead>
-          <tbody>
-            {players.map(p => (
-              <tr key={p.id}>
-                <td className="center">
-                  <input
-                    type="checkbox"
-                    checked={!!p.play}
-                    onChange={e => {
-                      const play = e.target.checked;
-                      const next = players.map(x => x.id===p.id ? {...x, play} : x);
-                      setLocalPlayers(next);
-                      setPlayers(next);
-                    }}
-                  />
-                </td>
-                <td>{p.name}</td>
-                <td className="center">{p.pos}</td>
-                <td className="center">{Number(p.r).toFixed(1).replace('.0','')}</td>
-                <td className="ellipsis">{(p.prefer||[]).map(id => players.find(x=>x.id===id)?.name).filter(Boolean).join(' · ')}</td>
-                <td className="ellipsis">{(p.avoid||[]).map(id => players.find(x=>x.id===id)?.name).filter(Boolean).join(' · ')}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {/* טבלת שחקנים – גלילה פנימית בלבד */}
+      <div className="players-block">
+        <div className="table-head">
+          <div className="th w-80">משחק?</div>
+          <div
+            className="th grow clickable"
+            onClick={() =>
+              setSort((s) => ({
+                by: "name",
+                dir: s.by === "name" && s.dir === "asc" ? "desc" : "asc",
+              }))
+            }
+          >
+            שם
+          </div>
+          <div
+            className="th w-120 clickable"
+            onClick={() =>
+              setSort((s) => ({
+                by: "pos",
+                dir: s.by === "pos" && s.dir === "asc" ? "desc" : "asc",
+              }))
+            }
+          >
+            עמדה
+          </div>
+          <div
+            className="th w-120 clickable"
+            onClick={() =>
+              setSort((s) => ({
+                by: "r",
+                dir: s.by === "r" && s.dir === "asc" ? "desc" : "asc",
+              }))
+            }
+          >
+            ציון
+          </div>
+        </div>
+
+        <div className="players-scroll">
+          {sortedPlayers.map((p) => (
+            <div key={p.id} className="tr">
+              <div className="td w-80">
+                <input
+                  type="checkbox"
+                  checked={p.selected}
+                  onChange={() => togglePlaying(p.id)}
+                />
+              </div>
+              <div className="td grow">{p.name}</div>
+              <div className="td w-120">{posNames[p.pos] || p.pos}</div>
+              <div className="td w-120">{p.r}</div>
+            </div>
+          ))}
+        </div>
       </div>
-    </section>
+    </div>
   );
 }
