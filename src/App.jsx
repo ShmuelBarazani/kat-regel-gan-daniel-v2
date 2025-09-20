@@ -1,8 +1,9 @@
 import React from "react";
 import { Routes, Route, Navigate, NavLink } from "react-router-dom";
-
 import Players from "./pages/Players.jsx";
 import DoForces from "./pages/DoForces.jsx";
+import Rating from "./pages/Rating.jsx";
+import Manager from "./pages/Manager.jsx";
 
 export default function App() {
   return (
@@ -11,11 +12,11 @@ export default function App() {
         <h1 style={{margin:0, fontSize:32, display:"flex", alignItems:"center", gap:10}}>
           <span role="img" aria-label="soccer">⚽</span> קטרגל-גן דניאל
         </h1>
-
-        {/* ניווט עליון – מובנה במקום TopNav.jsx */}
         <nav className="tabs">
           <NavLink to="/players" className={({isActive})=>"tab"+(isActive?" active":"")}>שחקנים</NavLink>
           <NavLink to="/round"   className={({isActive})=>"tab"+(isActive?" active":"")}>עשה כוחות / מחזור</NavLink>
+          <NavLink to="/rating"  className={({isActive})=>"tab"+(isActive?" active":"")}>דירוג</NavLink>
+          <NavLink to="/manager" className={({isActive})=>"tab"+(isActive?" active":"")}>מנהל</NavLink>
         </nav>
       </header>
 
@@ -24,6 +25,8 @@ export default function App() {
           <Route path="/" element={<Navigate to="/players" replace />} />
           <Route path="/players" element={<Players />} />
           <Route path="/round"   element={<DoForces />} />
+          <Route path="/rating"  element={<Rating />} />
+          <Route path="/manager" element={<Manager />} />
           <Route path="*" element={<Navigate to="/players" replace />} />
         </Routes>
       </main>
