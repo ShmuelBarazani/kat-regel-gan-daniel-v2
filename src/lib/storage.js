@@ -1,12 +1,13 @@
 /* ---------------------------------------------------------
    src/lib/storage.js
-   שכבת אחסון/טעינה אחודה ל־localStorage + קבצים בצד לקוח.
+   שכבת אחסון/טעינה אחודה ל־localStorage + fetch לקבצי JSON.
+   בטוח ל-SSR/Build (אין גישה ל-window מחוץ לפונקציות).
 --------------------------------------------------------- */
 
-/** מפתחות אחידים לשימוש באפליקציה */
+/** מפתחות LS אחידים */
 export const STORAGE_KEYS = {
   PLAYERS: "katregel_players_v2",
-  LAST_TEAMS: "katregel_last_teams_v2",
+  LAST_TEAMS: "katregel_last_teams_v2", // { teamCount:number, groups: string[][] | number[][] }
   ROUNDS: "katregel_rounds_v1",
 };
 
@@ -35,7 +36,7 @@ function writeLS(key, value) {
   try {
     window.localStorage.setItem(key, JSON.stringify(value));
   } catch {
-    /* ignore quota or private mode */
+    /* ignore quota/private mode */
   }
   return value;
 }
@@ -51,7 +52,6 @@ import { useEffect, useState, useCallback } from "react";
 /**
  * useStorage(key, initialValue)
  * מחזיר [value, setValue, clear]
- *  - קורא/שומר ב־localStorage תחת המפתח שניתן.
  */
 export function useStorage(key, initialValue) {
   const getInitial = () => readLS(key, initialValue);
@@ -77,8 +77,8 @@ export function useStorage(key, initialValue) {
 
 /**
  * loadJSON(ref, fallback)
- *  - אם ref מתחיל ב־'/' → יבצע fetch ויחזיר JSON
- *  - אחרת → יקרא מ־localStorage (key)
+ *  - אם ref מתחיל ב־'/' → fetch JSON מהשרת
+ *  - אחרת → localStorage
  */
 export async function loadJSON(ref, fallback = null) {
   if (isUrlLike(ref)) {
@@ -95,9 +95,8 @@ export async function loadJSON(ref, fallback = null) {
 
 /**
  * saveJSON(ref, data)
- *  - אם ref מתחיל ב־'/' → ינסה לשמור דרך /api/save (אם קיים),
- *    ואם לא – יחזיר את הנתונים בלי לשבור.
- *  - אחרת → ישמור ב־localStorage תחת key=ref.
+ *  - אם ref מתחיל ב־'/' → ניסיון לשמור דרך /api/save (אם קיים)
+ *  - אחרת → localStorage
  */
 export async function saveJSON(ref, data) {
   if (isUrlLike(ref)) {
@@ -108,7 +107,7 @@ export async function saveJSON(ref, data) {
         body: JSON.stringify({ path: ref, data }),
       });
     } catch {
-      /* אין API / שמירה נכשלה — לא מפילים את הלקוח */
+      /* אין API – לא מפילים את הלקוח */
     }
     return data;
   }
@@ -117,12 +116,10 @@ export async function saveJSON(ref, data) {
 
 /* ========= Players ========= */
 
-/** קורא את רשימת השחקנים (LS → ואם ריק אז /players.json) */
 export async function getPlayers() {
   const local = readLS(STORAGE_KEYS.PLAYERS, null);
   if (local && Array.isArray(local)) return local;
 
-  // קובץ ברירת מחדל מה-public
   try {
     const res = await fetch("/players.json", { cache: "no-store" });
     if (res.ok) {
@@ -134,23 +131,68 @@ export async function getPlayers() {
   return [];
 }
 
-/** שומר רשימת שחקנים ב־LS */
 export function setPlayers(players) {
   return writeLS(STORAGE_KEYS.PLAYERS, Array.isArray(players) ? players : []);
 }
 
-/** סופר כמה שחקנים מסומנים "משחק?" */
 export function countActive(players) {
   if (!Array.isArray(players)) return 0;
   return players.reduce((acc, p) => acc + (p?.selected ? 1 : 0), 0);
 }
 
-/* ========= Rounds (Cycles) ========= */
+/* ========= Teams snapshot (מסך "כוחות") ========= */
+/**
+ * התצורה הנשמרת תחת STORAGE_KEYS.LAST_TEAMS:
+ * { teamCount: number, groups: any[][] }
+ */
+
+/** מחזיר את עצם ה־snapshot האחרון (או ברירת מחדל) */
+export function getLastTeams(defaultCount = 4) {
+  const obj = readLS(STORAGE_KEYS.LAST_TEAMS, null);
+  if (obj && typeof obj.teamCount === "number" && Array.isArray(obj.groups)) {
+    return obj;
+  }
+  return { teamCount: defaultCount, groups: [] };
+}
+
+/** כמה קבוצות לשמור/להציג כרגע (לברירת מחדל 4) */
+export function getTeamCount(defaultCount = 4) {
+  const obj = readLS(STORAGE_KEYS.LAST_TEAMS, null);
+  if (obj && typeof obj.teamCount === "number") return obj.teamCount;
+  return defaultCount;
+}
 
 /**
- * מחזיר מערך מחזורים (rounds).
- * קודם מנסה מה-localStorage; אם ריק – טוען מ-/data/cycles.json ושומר מקומית.
+ * מעדכן את מספר הקבוצות ושומר snapshot עקבי
+ * (אם אין groups או שלא מתאים לאורך – נאתחל מערך groups ריק לפי האורך החדש)
  */
+export function setTeamCount(n) {
+  const safe = typeof n === "number" && n > 0 ? n : 4;
+  const prev = readLS(STORAGE_KEYS.LAST_TEAMS, null);
+  let groups = Array.isArray(prev?.groups) ? prev.groups : [];
+  if (!Array.isArray(groups) || groups.length !== safe) {
+    groups = Array.from({ length: safe }, () => []);
+  }
+  return writeLS(STORAGE_KEYS.LAST_TEAMS, { teamCount: safe, groups });
+}
+
+/** שמירת תצלום מצב הקבוצות האחרון */
+export function saveTeamSnapshot(groups, teamCount) {
+  const count =
+    typeof teamCount === "number"
+      ? teamCount
+      : Array.isArray(groups)
+      ? groups.length
+      : getTeamCount(4);
+  const payload = {
+    teamCount: count,
+    groups: Array.isArray(groups) ? groups : [],
+  };
+  return writeLS(STORAGE_KEYS.LAST_TEAMS, payload);
+}
+
+/* ========= Rounds (Cycles) ========= */
+
 export async function getRounds() {
   const cached = readLS(STORAGE_KEYS.ROUNDS, null);
   if (cached && Array.isArray(cached)) return cached;
@@ -166,7 +208,6 @@ export async function getRounds() {
   return [];
 }
 
-/** שומר מערך מחזורים ב־LS ומחזיר אותו */
 export function setRounds(rounds) {
   const safe = Array.isArray(rounds) ? rounds : [];
   return writeLS(STORAGE_KEYS.ROUNDS, safe);
