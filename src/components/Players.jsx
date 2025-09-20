@@ -4,13 +4,14 @@ import { useStorage, POS } from "../lib/storage.js";
 import PlayerFormModal from "./PlayerFormModal.jsx";
 import LinkPickerModal from "./LinkPickerModal.jsx";
 
+/* סדר עמודות – מימין לשמאל */
 const COLS = [
-  { key: "actions",  label: "פעולות" },
+  { key: "name",     label: "שם" },
+  { key: "pos",      label: "עמדה" },
+  { key: "rating",   label: "ציון" },
   { key: "mustWith", label: "חייב עם" },
   { key: "avoidWith",label: "לא עם" },
-  { key: "rating",   label: "ציון" },
-  { key: "pos",      label: "עמדה" },
-  { key: "name",     label: "שם" },
+  { key: "actions",  label: "פעולות" },
   { key: "active",   label: "משחק?" },
 ];
 
@@ -19,7 +20,6 @@ export default function Players({ embedded = false }) {
   const [showAdd, setShowAdd] = useState(false);
   const [sort, setSort] = useState({ key: "rating", dir: "desc" });
 
-  // נורמליזציה לשדות ההיסטוריים (prefer/avoid)
   const normalized = useMemo(
     () => players.map(p => ({
       ...p,
@@ -40,28 +40,17 @@ export default function Players({ embedded = false }) {
   }, [options]);
 
   const [picker, setPicker] = useState(null);
-  // picker = { playerId, field:'mustWith'|'avoidWith', value:[ids] }
-
   const openPicker = (player, field) => {
     const initial =
       (player[field] ??
        (field === "mustWith" ? player.prefer : player.avoid) ??
        []).map(String);
-
-    setPicker({
-      playerId: player.id,
-      field,
-      value: initial,
-    });
+    setPicker({ playerId: player.id, field, value: initial });
   };
-
   const handlePickerSave = (vals) => {
     const { playerId, field } = picker;
     const patch = { [field]: vals };
-    // תאימות לאחור לשדות הישנים
-    if (field === "mustWith") patch.prefer = vals;
-    else patch.avoid = vals;
-
+    if (field === "mustWith") patch.prefer = vals; else patch.avoid = vals; // תאימות לאחור
     setPlayers(prev => prev.map(p => p.id === playerId ? ({ ...p, ...patch }) : p));
     setPicker(null);
   };
@@ -92,7 +81,6 @@ export default function Players({ embedded = false }) {
 
   const updatePlayer = (id, patch) =>
     setPlayers(prev => prev.map(p => p.id === id ? ({ ...p, ...patch }) : p));
-
   const removePlayer = (id) =>
     setPlayers(prev => prev.filter(p => p.id !== id));
 
@@ -100,16 +88,17 @@ export default function Players({ embedded = false }) {
     <div className="chips">
       {ids.length
         ? ids.map(x => <span key={x} className="chip">{idToName(x)}</span>)
-        : <span className="chip chip-empty">—</span>
-      }
+        : <span className="chip chip-empty">—</span>}
     </div>
   );
 
   return (
-    <div className={embedded ? "players-embed-root" : "players-page"} dir="rtl">
-      <div className="toolbar players-toolbar">
-        <button className="btn primary" onClick={() => setShowAdd(true)}>הוסף שחקן</button>
-      </div>
+    <div className={embedded ? "players-embed-root" : "players-page container"} dir="rtl">
+      {!embedded && (
+        <div className="toolbar players-toolbar">
+          <button className="btn primary" onClick={() => setShowAdd(true)}>הוסף שחקן</button>
+        </div>
+      )}
 
       <div className={embedded ? "table-scroll" : "table-wrapper"}>
         <table className="players-table">
@@ -118,8 +107,8 @@ export default function Players({ embedded = false }) {
               {COLS.map(c => (
                 <th
                   key={c.key}
-                  onClick={()=>c.key!=="actions" && flipSort(c.key)}
-                  style={{cursor: c.key!=="actions" ? "pointer" : "default"}}
+                  onClick={()=>!["actions","active"].includes(c.key) && flipSort(c.key)}
+                  style={{cursor: !["actions","active"].includes(c.key) ? "pointer" : "default"}}
                 >
                   {c.label}{sort.key===c.key ? (sort.dir==="asc" ? " ▲":" ▼") : ""}
                 </th>
@@ -129,42 +118,45 @@ export default function Players({ embedded = false }) {
           <tbody>
             {sortedPlayers.map(p => (
               <tr key={p.id}>
-                <td>
-                  <button className="btn danger" onClick={()=>removePlayer(p.id)}>מחיקה</button>
-                </td>
-
+                {/* שם */}
                 <td className="nowrap">
-                  {namesChips(p.mustWith)}
-                  <button className="btn small cell-btn" onClick={()=>openPicker(p,"mustWith")}>ערוך</button>
+                  <input className="input"
+                         value={p.name}
+                         onChange={e => updatePlayer(p.id, {name: e.target.value})}/>
                 </td>
 
-                <td className="nowrap">
-                  {namesChips(p.avoidWith)}
-                  <button className="btn small cell-btn" onClick={()=>openPicker(p,"avoidWith")}>ערוך</button>
-                </td>
-
-                <td>
-                  <input type="number" className="input" step="0.1" min="1" max="10"
-                         value={p.rating}
-                         onChange={e => updatePlayer(p.id, {rating: Number(e.target.value)})}/>
-                </td>
-
+                {/* עמדה */}
                 <td>
                   <select value={p.pos} onChange={e => updatePlayer(p.id, {pos: e.target.value})}>
                     {POS.map(op => <option key={op} value={op}>{op}</option>)}
                   </select>
                 </td>
 
+                {/* ציון */}
                 <td>
-                  <input className="input"
-                         value={p.name}
-                         onChange={e => updatePlayer(p.id, {name: e.target.value})}/>
+                  <input type="number" className="input" step="0.1" min="1" max="10"
+                         value={p.rating}
+                         onChange={e => updatePlayer(p.id, {rating: Number(e.target.value)})}/>
                 </td>
 
-                <td>
-                  <input type="checkbox" checked={!!p.active}
-                         onChange={e => updatePlayer(p.id, {active: e.target.checked})}/>
+                {/* חייב עם */}
+                <td className="nowrap">
+                  {namesChips(p.mustWith)}
+                  <button className="btn small cell-btn" onClick={()=>openPicker(p,"mustWith")}>ערוך</button>
                 </td>
+
+                {/* לא עם */}
+                <td className="nowrap">
+                  {namesChips(p.avoidWith)}
+                  <button className="btn small cell-btn" onClick={()=>openPicker(p,"avoidWith")}>ערוך</button>
+                </td>
+
+                {/* פעולות */}
+                <td><button className="btn danger" onClick={()=>removePlayer(p.id)}>מחיקה</button></td>
+
+                {/* משחק? */}
+                <td><input type="checkbox" checked={!!p.active}
+                           onChange={e => updatePlayer(p.id, {active: e.target.checked})}/></td>
               </tr>
             ))}
           </tbody>
@@ -176,7 +168,6 @@ export default function Players({ embedded = false }) {
           players={normalized}
           onClose={() => setShowAdd(false)}
           onSave={(np)=>{ 
-            // תאימות לשדות הישנים
             const x = { ...np, prefer: np.mustWith, avoid: np.avoidWith };
             setPlayers(prev=>[x, ...prev]);
             setShowAdd(false);
@@ -187,7 +178,7 @@ export default function Players({ embedded = false }) {
       {picker && (
         <LinkPickerModal
           title={picker.field === "mustWith" ? 'בחר "חייב עם"' : 'בחר "לא עם"'}
-          options={options.filter(o => o.id !== String(picker.playerId))} // לא מציגים את עצמו
+          options={options.filter(o => o.id !== String(picker.playerId))}
           value={picker.value}
           onClose={() => setPicker(null)}
           onSave={handlePickerSave}
