@@ -1,101 +1,153 @@
 // src/components/Teams.jsx
 import React, { useEffect, useMemo, useState } from "react";
-import { useStorage } from "../lib/storage.js";
-import Players from "./Players.jsx";
+import {
+  getPlayers, setPlayers,
+  getTeamsState, setTeamsState,
+  addRound, countActive
+} from "../lib/storage";
+
+const emptyGroups = (n) => Array.from({ length: n }, () => []);
 
 export default function Teams() {
-  const { players, addCycle, getLastTeams, setLastTeams } = useStorage();
-  const activePlayers = useMemo(() => players.filter(p => p.active), [players]);
+  const [players, setLocalPlayers] = useState(getPlayers([]));
+  const [teamCount, setTeamCount]   = useState(getTeamsState().teamCount || 4);
+  const [groups, setGroups]         = useState(() => {
+    const s = getTeamsState();
+    return s.groups?.length ? s.groups : emptyGroups(s.teamCount || 4);
+  });
 
-  const [teamCount, setTeamCount] = useState(4);
-  const [groups, setGroups] = useState([]); // [[playerId...]]
-
-  // שחזור מצב עמוד (קבוצות אחרונות)
+  // אם מישהו עדכן שחקנים במסך “שחקנים” — נטען שוב
   useEffect(() => {
-    const last = getLastTeams();
-    if (last && last.groups?.length) {
-      setTeamCount(last.teamCount || 4);
-      setGroups(last.groups);
-    }
-  }, [getLastTeams]);
+    setLocalPlayers(getPlayers([]));
+  }, []);
 
-  useEffect(() => {
-    setLastTeams({ teamCount, groups });  // נשמר מידית
-  }, [teamCount, groups, setLastTeams]);
+  const active = useMemo(() => players.filter(p => p.play), [players]);
+  const activeCount = active.length;
 
-  const avg = (ids) => {
-    if (!ids.length) return 0;
-    const sum = ids.reduce((s,id)=> s + (activePlayers.find(p=>String(p.id)===String(id))?.rating || 0), 0);
-    return Number((sum / ids.length).toFixed(2));
-  };
+  // שמור מצב כוחות כדי שלא ייעלם כשחוזרים בין טאבים
+  useEffect(() => { setTeamsState({ teamCount, groups }); }, [teamCount, groups]);
 
-  // אלגוריתם מאוזן בסיסי: ממיינים לפי ציון ו"נחש" בין הקבוצות
-  const makeTeams = () => {
-    const list = activePlayers.slice().sort((a,b)=>b.rating-a.rating).map(p=>String(p.id));
-    const g = Array.from({length: teamCount}, ()=>[]);
-    let dir = 1, k = 0;
-    for (const id of list) {
-      g[k].push(id);
-      if (k===teamCount-1) { dir = -1; }
-      else if (k===0) { dir = 1; }
-      k += dir;
-    }
+  const reshuffle = () => {
+    // אלגוריתם פשוט: מיון יורד לפי ציון וחלוקה סיבובית
+    const ordered = [...active].sort((a,b) => b.r - a.r);
+    const g = emptyGroups(teamCount);
+    ordered.forEach((p, i) => g[i % teamCount].push(p.id));
     setGroups(g);
   };
 
-  const saveCycle = () => {
-    if (!groups.some(g=>g.length)) return alert("אין קבוצות לשמירה");
-    addCycle({
+  const saveRound = () => {
+    addRound({
       id: crypto.randomUUID(),
-      date: new Date().toISOString(),
+      at: new Date().toISOString(),
       teamCount,
+      activeCount,
       groups,
-      // צילום מצב (לקריאה בלבד בדירוג/מנהל):
-      snapshot: activePlayers.map(({id,name,pos,rating})=>({id,name,pos,rating}))
     });
-    alert("המחזור נשמר בהצלחה");
   };
 
+  const move = (fromIdx, toIdx, playerId) => {
+    setGroups(prev => {
+      const next = prev.map(x => [...x]);
+      const i = next[fromIdx].indexOf(playerId);
+      if (i > -1) next[fromIdx].splice(i,1);
+      next[toIdx].push(playerId);
+      return next;
+    });
+  };
+
+  const readable = (id) => players.find(p => p.id === id)?.name ?? id;
+
   return (
-    <div className="container" dir="rtl">
-      <div className="toolbar">
+    <section className="page teams" dir="rtl">
+      {/* כותרת ממורכזת מעל הבקרה */}
+      <h1 className="page-title center">קטרגל גן-דניאל ⚽</h1>
+
+      <div className="toolbar centered">
         <div className="inline">
-          מס' קבוצות:{" "}
-          <select value={teamCount} onChange={e=>setTeamCount(Number(e.target.value))}>
-            {[2,3,4,5,6].map(n=><option key={n} value={n}>{n}</option>)}
+          <label>מס’ קבוצות</label>
+          <select className="select"
+            value={teamCount}
+            onChange={(e) => {
+              const n = Number(e.target.value);
+              setTeamCount(n);
+              setGroups(emptyGroups(n));
+            }}>
+            {[2,3,4,5,6].map(n => <option key={n} value={n}>{n}</option>)}
           </select>
         </div>
-        <button className="btn primary" onClick={makeTeams}>עשה כוחות</button>
-        <button className="btn" onClick={saveCycle}>שמור מחזור</button>
+
+        <button className="btn primary" onClick={reshuffle}>עשה כוחות</button>
+        <button className="btn" onClick={saveRound}>שמור מחזור</button>
+
+        <div className="spacer" />
+        <div className="muted">
+          מסומנים למשחק: <b>{activeCount}</b> / {players.length}
+        </div>
       </div>
 
-      {/* הקבוצות למעלה */}
-      <div className="teams-grid">
-        {Array.from({length: teamCount}).map((_,i)=>(
-          <div className="team-card" key={i}>
-            <div className="team-header">
-              <span>קבוצה {i+1}</span>
-              <span>{avg(groups[i]||[])} ממוצע</span>
-            </div>
-            <div className="team-list">
-              {(groups[i]||[]).map(pid=>{
-                const p = activePlayers.find(x=>String(x.id)===String(pid));
-                if (!p) return null;
-                return (
-                  <div className="team-row" key={pid}>
-                    <div className="name">{p.name}</div>
-                    <div className="pos">{p.pos}</div>
-                    <div className="rating">{p.rating}</div>
-                  </div>
-                );
-              })}
-            </div>
+      {/* כוחות מעל הטבלה */}
+      <div className="groups-grid">
+        {groups.map((g, gi) => (
+          <div className="group-card" key={gi}>
+            <div className="group-title">קבוצה {gi+1}</div>
+            <ul className="group-list">
+              {g.map(pid => (
+                <li key={pid}>
+                  <span className="name">{readable(pid)}</span>
+                  {/* פעולות גרירה בין קבוצות (חצים קטנים) */}
+                  <span className="move">
+                    {gi>0 && <button className="icon" onClick={() => move(gi, gi-1, pid)}>◀</button>}
+                    {gi<groups.length-1 && <button className="icon" onClick={() => move(gi, gi+1, pid)}>▶</button>}
+                  </span>
+                </li>
+              ))}
+            </ul>
           </div>
         ))}
       </div>
 
-      {/* טבלת שחקנים מתחת לקבוצות */}
-      <Players embedded />
-    </div>
+      {/* טבלת שחקנים עם גלילה פנימית */}
+      <div className="subbar top-gap">
+        <span>שחקנים פעילים: <b>{activeCount}</b> / {players.length}</span>
+      </div>
+
+      <div className="table-wrapper players-scroll">
+        <table className="table players-table">
+          <thead>
+            <tr>
+              <th style={{width:72}}>משחק?</th>
+              <th style={{minWidth:220}}>שם</th>
+              <th style={{width:110}}>עמדה</th>
+              <th style={{width:110}}>ציון</th>
+              <th>חייב עם</th>
+              <th>לא עם</th>
+            </tr>
+          </thead>
+          <tbody>
+            {players.map(p => (
+              <tr key={p.id}>
+                <td className="center">
+                  <input
+                    type="checkbox"
+                    checked={!!p.play}
+                    onChange={e => {
+                      const play = e.target.checked;
+                      const next = players.map(x => x.id===p.id ? {...x, play} : x);
+                      setLocalPlayers(next);
+                      setPlayers(next);
+                    }}
+                  />
+                </td>
+                <td>{p.name}</td>
+                <td className="center">{p.pos}</td>
+                <td className="center">{Number(p.r).toFixed(1).replace('.0','')}</td>
+                <td className="ellipsis">{(p.prefer||[]).map(id => players.find(x=>x.id===id)?.name).filter(Boolean).join(' · ')}</td>
+                <td className="ellipsis">{(p.avoid||[]).map(id => players.find(x=>x.id===id)?.name).filter(Boolean).join(' · ')}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
