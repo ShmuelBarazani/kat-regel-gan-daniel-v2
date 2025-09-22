@@ -7,7 +7,7 @@ import DoForces from "./pages/DoForces.jsx";
 import Ranking from "./pages/Ranking.jsx";
 import Admin from "./pages/Admin.jsx";
 
-// אין import "./styles.css" כאן!
+// שים לב: אין import ל-CSS כאן!
 
 function Tabs() {
   const { pathname } = useLocation();
@@ -30,7 +30,16 @@ export default function App() {
   return (
     <BrowserRouter>
       <div className="page-wrap" style={{ padding: "16px 12px" }}>
-        <header className="site-header" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <header
+          className="site-header"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
           <h1 style={{ margin: 0 }}>קטרגל־גן דניאל ⚽</h1>
           <Tabs />
         </header>
