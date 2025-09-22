@@ -1,6 +1,6 @@
 // src/components/PrintView.jsx
 import React, { useEffect } from "react";
-import "../styles/print.css"; // חשוב: זה מה שמחיל את ה-CSS של ההדפסה
+import "../styles/print.css"; // מחיל צבעי מערכת + 2x2 + עמוד אחד
 
 function GoalsBoxes({ count = 12 }) {
   return (
@@ -48,7 +48,7 @@ export default function PrintView({ teams, onClose }) {
   }, [onClose]);
 
   const printIt = () => window.print();
-  const four = teams.slice(0, 4); // עמוד אחד 2×2
+  const four = teams.slice(0, 4); // עמוד אחד, 2x2
 
   return (
     <div className="print-modal">
