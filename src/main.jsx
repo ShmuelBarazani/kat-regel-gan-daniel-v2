@@ -1,13 +1,13 @@
 // src/main.jsx
 import React from "react";
-import ReactDOM from "react-dom/client";
+import { createRoot } from "react-dom/client";
 import App from "./App.jsx";
+import { AppProvider } from "@/store/playerStorage";
 
-// טען את ה-CSS הגלובלי (קובץ קיים/נוצר ב־src/styles.css)
-import "./styles.css";
-
-ReactDOM.createRoot(document.getElementById("root")).render(
+createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    <App />
+    <AppProvider>
+      <App />
+    </AppProvider>
   </React.StrictMode>
 );
