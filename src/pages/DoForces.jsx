@@ -2,55 +2,54 @@
 import React, { useEffect, useMemo, useState } from "react";
 import playersDataFallback from "../../data/players.json";
 
-/* =================== אחסון עזר =================== */
+/* =================== מפתחות אחסון =================== */
 const LS_KEYS = {
-  DRAFT: "teams_draft_v1",          // מצב הקבוצות האחרון
+  DRAFT: "teams_draft_v1",     // מצב קבוצות אחרון (התמדה במסך)
   UI: "teams_ui_state_v1",
-  ROUNDS: "rounds_store_v1",        // "מסך מנהל" – מחזורים שמורים
+  ROUNDS: "rounds_store_v1",   // מחזורים למסך מנהל
 };
 
-/* =================== טעינת שחקנים – תואם למסך "שחקנים" =================== */
+/* ========= טעינת שחקנים – כמו במסך “שחקנים” ========= */
 async function tryLoadFromStore() {
   try {
     const mod = await import("../store/playerStorage.js");
     const m = mod.default || mod;
-    if (m && typeof m.getState === "function") {
+    if (m?.getState) {
       const st = m.getState();
       if (st && Array.isArray(st.players) && st.players.length) return st.players;
     }
     if (typeof m.getActivePlayers === "function") {
-      const arr = await m.getActivePlayers(); if (Array.isArray(arr) && arr.length) return arr;
+      const arr = await m.getActivePlayers(); if (arr?.length) return arr;
     }
     if (typeof m.getPlayers === "function") {
-      const arr = await m.getPlayers(); if (Array.isArray(arr) && arr.length) return arr;
+      const arr = await m.getPlayers(); if (arr?.length) return arr;
     }
   } catch {}
   return null;
 }
 function tryLoadFromLocalStorage() {
-  const candidates = [];
-  const read = (k) => {
-    try { const val = JSON.parse(localStorage.getItem(k) || "null"); return Array.isArray(val) ? val : null; }
-    catch { return null; }
-  };
+  const out = [];
   for (let i = 0; i < localStorage.length; i++) {
     const k = localStorage.key(i);
-    const arr = read(k);
-    if (arr?.length) candidates.push(arr);
+    try {
+      const val = JSON.parse(localStorage.getItem(k) || "null");
+      if (Array.isArray(val)) out.push(val);
+    } catch {}
   }
-  if (!candidates.length) return null;
+  if (!out.length) return null;
   const score = (arr) =>
-    arr.filter((p) => p && typeof p.name === "string" && (typeof p.rating === "number" || !isNaN(parseFloat(p.rating)))).length;
-  candidates.sort((a, b) => score(b) - score(a));
-  return candidates[0];
+    arr.filter((p) => p && typeof p.name === "string" &&
+      (typeof p.rating === "number" || !isNaN(parseFloat(p.rating)))).length;
+  out.sort((a, b) => score(b) - score(a));
+  return out[0];
 }
 function loadFromDataFile() {
   return Array.isArray(playersDataFallback) ? playersDataFallback : [];
 }
 async function loadPlayersUnified() {
   let arr = await tryLoadFromStore();
-  if (!arr || !arr.length) arr = tryLoadFromLocalStorage();
-  if (!arr || !arr.length) arr = loadFromDataFile();
+  if (!arr?.length) arr = tryLoadFromLocalStorage();
+  if (!arr?.length) arr = loadFromDataFile();
   return (arr || [])
     .map((p, idx) => ({
       id: p.id ?? `${p.name || "ללא שם"}-${idx}`,
@@ -64,17 +63,15 @@ async function loadPlayersUnified() {
     .filter((p) => p.active);
 }
 
-/* =================== לוגיקה של כוחות =================== */
+/* =================== לוגיקת איזון =================== */
 const byRatingDesc = (a, b) => (b.rating || 0) - (a.rating || 0);
-const rnd = (n=1)=>Math.random()-0.5;   // שובר שוויון אקראי
+const rndTie = () => Math.random() - 0.5;
 
 function emptyTeams(n) {
   return Array.from({ length: n }, (_, i) => ({
     id: `team-${i + 1}`,
     name: `קבוצה ${i + 1}`,
     players: [],
-    sum: 0,
-    count: 0,
   }));
 }
 function sizeTargets(playersCount, teamsCount) {
@@ -82,34 +79,53 @@ function sizeTargets(playersCount, teamsCount) {
   const extra = playersCount % teamsCount;
   return Array.from({ length: teamsCount }, (_, i) => base + (i < extra ? 1 : 0));
 }
-function teamStats(team) {
-  const sum = team.players.reduce((s, p) => s + (p.rating || 0), 0);
-  const count = team.players.length;
-  const avg = count ? Math.round((sum / count) * 10) / 10 : 0;
-  return { sum, avg, count };
+function sumRating(players) {
+  return players.reduce((s, p) => s + (p.rating || 0), 0);
 }
+function avg(players) {
+  return players.length ? sumRating(players) / players.length : 0;
+}
+
+// מאגד “חייב־עם” לקלסטרים (Union-Find)
 function buildClusters(players) {
-  // מאגד "חייב־עם" לקלסטרים (Union-Find)
-  const byName = new Map(players.map((p, i) => [p.name, i]));
+  const nameIdx = new Map(players.map((p, i) => [p.name, i]));
   const parent = players.map((_, i) => i);
   const find = (x) => (parent[x] === x ? x : (parent[x] = find(parent[x])));
-  const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent[rb] = ra; };
-  players.forEach((p, i) => (p.mustWith || []).forEach((mw) => byName.has(mw) && union(i, byName.get(mw))));
+  const unite = (a, b) => {
+    const ra = find(a), rb = find(b);
+    if (ra !== rb) parent[rb] = ra;
+  };
+  players.forEach((p, i) => (p.mustWith || []).forEach((mw) => nameIdx.has(mw) && unite(i, nameIdx.get(mw))));
   const groups = new Map();
-  players.forEach((p, i) => { const r = find(i); (groups.get(r) || groups.set(r, []).get(r)).push(p); });
-
+  players.forEach((p, i) => {
+    const r = find(i);
+    if (!groups.has(r)) groups.set(r, []);
+    groups.get(r).push(p);
+  });
   const clusters = [];
-  for (const arr of groups.values()) {
-    const members = arr.slice().sort(byRatingDesc);
-    const ratingSum = members.reduce((s, m) => s + (m.rating || 0), 0);
-    const notWith = Array.from(new Set(members.flatMap((m) => m.notWith || [])));
-    clusters.push({ members, ratingSum, size: members.length, notWith });
+  for (const g of groups.values()) {
+    const members = g.slice().sort(byRatingDesc);
+    clusters.push({
+      members,
+      size: members.length,
+      ratingSum: sumRating(members),
+      notWith: Array.from(new Set(members.flatMap((m) => m.notWith || []))),
+      names: new Set(members.map((m) => m.name)),
+    });
   }
-  // חזקים קודם + שובר שוויון רנדומי כדי שכל לחיצה תיצור חלוקה שונה
-  clusters.sort((a, b) => (b.ratingSum - a.ratingSum) || (b.size - a.size) || rnd());
+  // חזקים קודם + שובר שוויון רנדומי כדי שכל לחיצה יוצרת חלוקה קצת אחרת
+  clusters.sort((a, b) => (b.ratingSum - a.ratingSum) || (b.size - a.size) || rndTie());
   return clusters;
 }
-function buildBalancedTeams(players, teamsCount) {
+
+function violatesNotWith(teamPlayers, cluster) {
+  if (!cluster.notWith?.length) return false;
+  const names = new Set(teamPlayers.map((p) => p.name));
+  return cluster.notWith.some((nw) => names.has(nw));
+}
+
+// שיבוץ ראשוני לפי סכום נמוך ויעד גודל
+function initialAssign(players, teamsCount) {
   const targets = sizeTargets(players.length, teamsCount);
   const teams = emptyTeams(teamsCount);
   const clusters = buildClusters(players);
@@ -117,57 +133,127 @@ function buildBalancedTeams(players, teamsCount) {
   for (const cl of clusters) {
     const order = teams
       .map((t, i) => ({ i, t }))
-      .sort((a, b) => (a.t.sum - b.t.sum) || (a.t.count - b.t.count) || rnd());
+      .sort((a, b) => (sumRating(a.t.players) - sumRating(b.t.players)) || (a.t.players.length - b.t.players.length) || rndTie());
+
     let placed = false;
     for (const o of order) {
       const target = targets[o.i];
-      if (o.t.count + cl.size > target) continue;
-      // "לא־עם": התרעה תוצג לאחר גרירה בלבד; כאן מנסים להימנע מראש
-      const names = new Set(o.t.players.map((p) => p.name));
-      if (cl.notWith.some((nw) => names.has(nw))) continue;
-
+      if (o.t.players.length + cl.size > target) continue;
+      if (violatesNotWith(o.t.players, cl)) continue;
       o.t.players.push(...cl.members);
-      o.t.sum += cl.ratingSum;
-      o.t.count += cl.size;
-      placed = true;
-      break;
+      placed = true; break;
     }
     if (!placed) {
+      // fallback: הקבוצה עם הסכום הנמוך ביותר ובעלת הכי הרבה מקום
       const fb = teams
-        .map((t, i) => ({ i, t, free: targets[i] - t.count }))
+        .map((t, i) => ({ i, t, free: targets[i] - t.players.length }))
         .filter((x) => x.free > 0)
-        .sort((a, b) => (a.t.sum - b.t.sum) || (b.free - a.free) || rnd())[0];
-      (fb ? fb.t : teams.sort((a,b)=>a.sum-b.sum||rnd())[0]).players.push(...cl.members);
+        .sort((a, b) => (sumRating(a.t.players) - sumRating(b.t.players)) || (b.free - a.free) || rndTie())[0];
+      (fb ? fb.t : teams.sort((a, b) => sumRating(a.players) - sumRating(b.players) || rndTie())[0]).players.push(...cl.members);
     }
   }
-  teams.forEach((t) => (t.players = t.players.slice().sort(byRatingDesc)));
-  return teams.map((t, i) => ({ id: `team-${i + 1}`, name: `קבוצה ${i + 1}`, players: t.players }));
+  teams.forEach((t) => t.players.sort(byRatingDesc));
+  return { teams, targets };
 }
 
-/* =================== עזר למנהל/מחזורים =================== */
+// איזון חוזר: נעביר קלסטרים בין קבוצות כדי לצמצם סטיית ממוצעים, תוך שמירה על יעדי גודל ואילוצי not-with
+function rebalance(teams, targets, maxIters = 300) {
+  const score = () => {
+    const avgs = teams.map((t) => avg(t.players));
+    const mean = avgs.reduce((s, x) => s + x, 0) / avgs.length;
+    return Math.sqrt(avgs.reduce((s, x) => s + Math.pow(x - mean, 2), 0) / avgs.length);
+  };
+
+  // נכין קלסטרים מתוך הצבה נוכחית (כיבוד must-with)
+  const clustersByTeam = teams.map((t) => {
+    const items = [];
+    const taken = new Set();
+    t.players.forEach((p, i) => {
+      if (taken.has(p)) return;
+      const group = t.players.filter((q) => q.mustWith?.includes(p.name) || p.mustWith?.includes(q.name) || q === p);
+      group.forEach((g) => taken.add(g));
+      items.push({
+        members: group,
+        size: group.length,
+        ratingSum: sumRating(group),
+        notWith: Array.from(new Set(group.flatMap((m) => m.notWith || []))),
+        names: new Set(group.map((m) => m.name)),
+      });
+    });
+    // אם לא זוהו קלסטרים – כל אחד לעצמו
+    if (!items.length) t.players.forEach((p) => items.push({ members: [p], size: 1, ratingSum: p.rating || 0, notWith: p.notWith || [], names: new Set([p.name]) }));
+    return items;
+  });
+
+  let best = score();
+  for (let iter = 0; iter < maxIters; iter++) {
+    // מצא קבוצה "חזקה" (ממוצע גבוה) וחלשה (נמוך)
+    let hi = 0, lo = 0;
+    const avgs = teams.map((t) => avg(t.players));
+    avgs.forEach((v, i) => { if (v > avgs[hi]) hi = i; if (v < avgs[lo]) lo = i; });
+
+    if (hi === lo) break; // כולן שוות
+
+    // נסה להעביר קלסטר קטן מהחזקה לחלשה
+    const from = hi, to = lo;
+    const fromClusters = clustersByTeam[from];
+    fromClusters.sort((a, b) => a.ratingSum - b.ratingSum || a.size - b.size); // הכי קטן קודם
+    let improved = false;
+    for (const cl of fromClusters) {
+      // כבוד ליעדי גודל
+      if (teams[to].players.length + cl.size > targets[to]) continue;
+      if (teams[from].players.length - cl.size < targets[from] - 1) continue; // שמירה על ±1
+      if (violatesNotWith(teams[to].players, cl)) continue;
+
+      // בצע מהלך
+      teams[from].players = teams[from].players.filter((p) => !cl.names.has(p.name));
+      teams[to].players = [...teams[to].players, ...cl.members];
+      teams[from].players.sort(byRatingDesc);
+      teams[to].players.sort(byRatingDesc);
+
+      const s = score();
+      if (s + 1e-6 < best) { best = s; improved = true; break; }
+      // לא השתפר? בטל
+      teams[to].players = teams[to].players.filter((p) => !cl.names.has(p.name));
+      teams[from].players = [...teams[from].players, ...cl.members].sort(byRatingDesc);
+    }
+    if (!improved) break;
+  }
+  return teams;
+}
+
+function buildBalancedTeams(players, teamsCount) {
+  const { teams, targets } = initialAssign(players, teamsCount);
+  rebalance(teams, targets, 300);
+  return teams.map((t, i) => ({ id: `team-${i + 1}`, name: `קבוצה ${i + 1}`, players: t.players.slice().sort(byRatingDesc) }));
+}
+
+/* =================== עזר למסך מנהל =================== */
 function upsertRoundInStore({ teams, teamsCount, playersCount }) {
-  const now = new Date().toISOString();
+  const entry = {
+    id: Date.now().toString(),
+    createdAt: new Date().toISOString(),
+    teamsCount,
+    playersCount,
+    teams,
+    status: "draft",
+  };
   let store = [];
   try { store = JSON.parse(localStorage.getItem(LS_KEYS.ROUNDS) || "[]"); } catch {}
-  const entry = { id: now, createdAt: now, teamsCount, playersCount, teams, status: "draft" };
   store.unshift(entry);
   localStorage.setItem(LS_KEYS.ROUNDS, JSON.stringify(store));
+  return entry.id;
 }
 
 /* =================== קומפוננטת המסך =================== */
 export default function DoForces() {
   const [players, setPlayers] = useState([]);
   const [teamsCount, setTeamsCount] = useState(4);
-  const [teams, setTeams] = useState(emptyTeams(4).map((t) => ({ ...t, players: [] })));
+  const [teams, setTeams] = useState(emptyTeams(4));
   const [hideRatingsInCards, setHideRatingsInCards] = useState(false);
-
-  // הערות מוצגות רק אחרי גרירה (גרירה גוברת על אילוצים)
   const [userDraggedOnce, setUserDraggedOnce] = useState(false);
-
-  // PRINT PREVIEW
   const [showPrint, setShowPrint] = useState(false);
 
-  // טעינה ראשונית + התמדה
   useEffect(() => {
     (async () => {
       const ui = JSON.parse(localStorage.getItem(LS_KEYS.UI) || "null") || { hideRatingsInCards:false, teamsCount:4 };
@@ -183,58 +269,54 @@ export default function DoForces() {
         setTeams(draft.teams);
         setTeamsCount(draft.teamsCount);
       } else {
-        setTeams(emptyTeams(ui.teamsCount || 4).map((t) => ({ ...t, players: [] })));
+        setTeams(emptyTeams(ui.teamsCount || 4));
       }
     })();
-
     const onStorage = () => loadPlayersUnified().then(setPlayers);
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
-  // יעד גודל אינדיקטיבי (±1)
   const activeCount = players.length;
   const targets = useMemo(() => sizeTargets(activeCount, teamsCount), [activeCount, teamsCount]);
 
-  // הערות "חייב־עם / לא־עם" – לאחר גרירה בלבד
+  // הערות "חייב/לא־עם" – רק אחרי גרירה
   const mustWithAlerts = useMemo(() => {
     if (!userDraggedOnce) return [];
     const warnings = new Set();
     const nameToTeam = new Map();
     teams.forEach((t, ti) => t.players.forEach((p) => nameToTeam.set(p.name, ti)));
-    teams.forEach((t) =>
-      t.players.forEach((p) =>
+    teams.forEach((t) => {
+      const names = new Set(t.players.map((x) => x.name));
+      t.players.forEach((p) => {
         (p.mustWith || []).forEach((m) => {
           const t1 = nameToTeam.get(p.name);
           const t2 = nameToTeam.get(m);
           if (t2 !== undefined && t1 !== t2) warnings.add(`${p.name} חייב לשחק עם ${m} (כעת מופרדים)`);
-        })
-      )
-    );
-    teams.forEach((t) => {
-      const names = new Set(t.players.map((x) => x.name));
-      t.players.forEach((p) => (p.notWith || []).forEach((nw) => names.has(nw) && warnings.add(`${p.name} מסומן "לא־עם" ${nw} (כעת יחד)`)));
+        });
+        (p.notWith || []).forEach((nw) => {
+          if (names.has(nw)) warnings.add(`${p.name} מסומן "לא־עם" ${nw} (כעת יחד)`);
+        });
+      });
     });
     return [...warnings];
   }, [teams, userDraggedOnce]);
 
-  /* פעולות עיקריות */
+  /* פעולות */
   function onMakeTeams() {
-    const fresh = buildBalancedTeams(players, teamsCount); // איזון ממוצעים + גודל ±1 + אילוצים, עם אקראיות
+    const fresh = buildBalancedTeams(players, teamsCount);
     setTeams(fresh);
     setUserDraggedOnce(false);
-    // שומר מצב נוכחי להתמדה
     localStorage.setItem(LS_KEYS.DRAFT, JSON.stringify({ savedAt:new Date().toISOString(), teamsCount, teams:fresh }));
   }
   function onSaveDraft() {
     const payload = { savedAt: new Date().toISOString(), teamsCount, teams };
     localStorage.setItem(LS_KEYS.DRAFT, JSON.stringify(payload));
-    // הוספה/עדכון למחזורי מנהל
     upsertRoundInStore({ teams, teamsCount, playersCount: players.length });
-    alert("המחזור נשמר מקומית.");
+    alert("המחזור נשמר. רענן/פתח את מסך המנהל – הוא יופיע שם.");
   }
   function onClear() {
-    const blank = emptyTeams(teamsCount).map((t) => ({ ...t, players: [] }));
+    const blank = emptyTeams(teamsCount);
     setTeams(blank);
     setUserDraggedOnce(false);
     localStorage.setItem(LS_KEYS.DRAFT, JSON.stringify({ savedAt:new Date().toISOString(), teamsCount, teams:blank }));
@@ -248,7 +330,7 @@ export default function DoForces() {
     const num = Math.max(2, Math.min(8, Number(n) || 4));
     setTeamsCount(num);
     localStorage.setItem(LS_KEYS.UI, JSON.stringify({ hideRatingsInCards, teamsCount: num }));
-    const blank = emptyTeams(num).map((t) => ({ ...t, players: [] }));
+    const blank = emptyTeams(num);
     setTeams(blank);
     setUserDraggedOnce(false);
     localStorage.setItem(LS_KEYS.DRAFT, JSON.stringify({ savedAt:new Date().toISOString(), teamsCount:num, teams:blank }));
@@ -290,92 +372,78 @@ export default function DoForces() {
       <div className="print-backdrop">
         <div className="print-modal">
           <div className="print-modal-header">
-            <div style={{display:"flex",gap:8,alignItems:"center"}}>
-              <button className="btn" onClick={()=>window.print()}>הדפס</button>
-              <button className="btn ghost" onClick={onClose}>סגור</button>
-            </div>
-            <div style={{marginInlineStart:"auto"}}>
-              <button className="btn" onClick={()=>window.print()}>יצוא PDF</button>
-            </div>
+            <button className="btn" onClick={()=>window.print()}>הדפס</button>
+            <button className="btn ghost" onClick={onClose}>סגור</button>
+            <button className="btn" onClick={()=>window.print()} style={{ marginInlineStart:"auto" }}>יצוא PDF</button>
           </div>
 
-          <div className="print-root">
-            {teams.map((t, idx)=>(
-              <section key={t.id} className="print-card">
-                <header className="print-card-head">
+          <div className="print-grid">
+            {teams.map((t)=>(
+              <section key={t.id} className="pcard">
+                <header className="pcard-head">
                   <div>{dateStr} תאריך</div>
-                  <div className="print-team-title">{t.name}</div>
+                  <div className="pcard-title">{t.name}</div>
                 </header>
-                <table className="print-table">
+
+                <table className="ptable">
                   <thead>
                     <tr>
-                      <th style={{width:"75%"}}>שחקן</th>
-                      <th style={{width:"25%"}}>שערים</th>
+                      <th className="col-name">שחקן</th>
+                      <th className="col-goals">שערים</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {t.players.map((p,pi)=>(
-                      <tr key={pi}>
-                        <td className="print-name">{p.name}</td>
-                        <td className="print-goals">
-                          {Array.from({length:10}).map((_,i)=><span key={i} className="gbox"/>)}
-                        </td>
+                    {t.players.map((p,idx)=>(
+                      <tr key={idx}>
+                        <td className="cell-name">{p.name}</td>
+                        <td className="cell-goals">{Array.from({length:12}).map((_,i)=><span key={i} className="gbox"/>)}</td>
                       </tr>
                     ))}
-                    {/* שורות ריקות להשלמה */}
-                    {Array.from({length: Math.max(0, 10 - t.players.length)}).map((_,ri)=>(
+                    {Array.from({length: Math.max(0, 12 - t.players.length)}).map((_,ri)=>(
                       <tr key={`empty-${ri}`}>
-                        <td className="print-name">&nbsp;</td>
-                        <td className="print-goals">{Array.from({length:10}).map((_,i)=><span key={i} className="gbox"/>)}</td>
+                        <td className="cell-name">&nbsp;</td>
+                        <td className="cell-goals">{Array.from({length:12}).map((_,i)=><span key={i} className="gbox"/>)}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
 
-                <div className="print-footer-metrics">
-                  <div className="metric">
-                    <div>ניצחון</div>
-                    <div className="gline">{Array.from({length:10}).map((_,i)=><span key={i} className="gbox"/>)}</div>
-                  </div>
-                  <div className="metric">
-                    <div>תיקו</div>
-                    <div className="gline">{Array.from({length:10}).map((_,i)=><span key={i} className="gbox"/>)}</div>
-                  </div>
-                  <div className="metric">
-                    <div>הפסד</div>
-                    <div className="gline">{Array.from({length:10}).map((_,i)=><span key={i} className="gbox"/>)}</div>
-                  </div>
+                <div className="results-stack">
+                  <div className="rline"><span>ניצחון</span><div className="gline">{Array.from({length:12}).map((_,i)=><span key={i} className="gbox"/>)}</div></div>
+                  <div className="rline"><span>תיקו</span><div className="gline">{Array.from({length:12}).map((_,i)=><span key={i} className="gbox"/>)}</div></div>
+                  <div className="rline"><span>הפסד</span><div className="gline">{Array.from({length:12}).map((_,i)=><span key={i} className="gbox"/>)}</div></div>
                 </div>
               </section>
             ))}
           </div>
 
-          {/* סגנונות הדפסה – נשלפים מהקוד הישן ומותאמים */}
           <style>{`
             .print-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:1000}
-            .print-modal{background:#0b1220;border:1px solid #24324a;border-radius:12px;width:min(1100px,96vw);max-height:92vh;display:flex;flex-direction:column}
-            .print-modal-header{padding:12px;border-bottom:1px solid #24324a;display:flex;align-items:center;gap:8;background:#0f1a2e;position:sticky;top:0;z-index:2}
-            .print-root{padding:12px;display:grid;grid-template-columns:1fr 1fr;gap:12px;overflow:auto}
-            .print-card{background:white;color:black;border:2px solid #333;border-radius:6px;padding:8px;page-break-inside:avoid}
-            .print-card-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;font-weight:600}
-            .print-team-title{font-weight:700}
-            .print-table{width:100%;border-collapse:separate;border-spacing:0}
-            .print-table th,.print-table td{border:2px solid #333;padding:4px}
-            .print-name{text-align:right}
-            .print-goals{display:grid;grid-template-columns:repeat(10, 16px);gap:6px;justify-content:end}
-            .gbox{display:inline-block;width:14px;height:14px;border:2px solid #333;border-radius:3px}
-            .print-footer-metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px}
-            .metric{display:grid;grid-template-columns:60px 1fr;align-items:center;gap:6px}
-            .gline{display:grid;grid-template-columns:repeat(10, 16px);gap:6px;justify-content:start}
+            .print-modal{background:#0b1220;border:1px solid #24324a;border-radius:12px;width:min(1120px,96vw);max-height:92vh;display:flex;flex-direction:column}
+            .print-modal-header{padding:10px;border-bottom:1px solid #24324a;display:flex;gap:8;align-items:center;background:#0f1a2e}
+            .print-grid{padding:10px;display:grid;grid-template-columns:1fr 1fr;grid-auto-rows:1fr;gap:10px;overflow:auto}
+            .pcard{background:#fff;color:#000;border:2px solid #000;border-radius:6px;padding:6px;display:flex;flex-direction:column}
+            .pcard-head{display:flex;justify-content:space-between;align-items:center;font-weight:700;margin-bottom:4px}
+            .pcard-title{font-weight:800}
+            .ptable{width:100%;border-collapse:separate;border-spacing:0}
+            .ptable th,.ptable td{border:2px solid #000;padding:3px}
+            .col-name{width:52%}  /* ← צר יותר כדי שהעמוד יתיישר יפה */
+            .col-goals{width:48%}
+            .cell-name{text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+            .cell-goals{display:grid;grid-template-columns:repeat(12,14px);gap:5px;justify-content:end}
+            .gbox{display:inline-block;width:12px;height:12px;border:2px solid #000;border-radius:2px}
+            .results-stack{display:flex;flex-direction:column;gap:4px;margin-top:6px}
+            .rline{display:grid;grid-template-columns:56px 1fr;align-items:center;gap:6px}
+            .gline{display:grid;grid-template-columns:repeat(12,14px);gap:5px}
 
             @media print{
-              body{background:white !important}
-              .site-header, .tabs, nav, header.page-header, .btn, .pill, .warn, .page > header, .page > section:not(:has(.print-root)){ display:none !important; }
+              body{background:#fff !important}
+              .site-header,.tabs,.page > header:not(.keep-print), .btn, .pill{ display:none !important; }
               .print-backdrop{position:static;background:none}
               .print-modal{border:none;width:auto;max-height:none}
               .print-modal-header{display:none}
-              .print-root{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:0}
-              .print-card{break-inside:avoid-page;page-break-inside:avoid}
+              .print-grid{padding:0;gap:8px;grid-template-columns:1fr 1fr}
+              .pcard{page-break-inside:avoid;break-inside:avoid}
             }
           `}</style>
         </div>
@@ -385,8 +453,7 @@ export default function DoForces() {
 
   return (
     <div className="page" style={{ padding: "16px 12px" }}>
-      {/* כותרת + פעולות */}
-      <header style={{ display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap" }}>
+      <header className="keep-print" style={{ display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap" }}>
         <h2 style={{margin:0}}>קבוצות</h2>
         <div style={{ display:"flex",alignItems:"center",gap:8 }}>
           <label style={{ display:"flex",alignItems:"center",gap:6 }}>
@@ -398,7 +465,7 @@ export default function DoForces() {
           <button className="btn" onClick={onMakeTeams}>עשה כוחות</button>
           <button className="btn" onClick={()=>setShowPrint(true)}>PRINT PREVIEW</button>
           <button className="btn ghost" onClick={onClear}>איפוס</button>
-          <button className="btn" onClick={onSaveDraft}>שמור מחזור</button> {/* ← בלי "טיוטה" */}
+          <button className="btn" onClick={onSaveDraft}>שמור מחזור</button>
           <label className="pill" style={{ display:"flex",alignItems:"center",gap:6,padding:"6px 10px",borderRadius:999 }}>
             <input type="checkbox" checked={hideRatingsInCards} onChange={onToggleHide}/>
             <span>הסתר ציונים (בכרטיסים בלבד)</span>
@@ -406,24 +473,22 @@ export default function DoForces() {
         </div>
       </header>
 
-      {/* הערות – רק אחרי גרירה */}
       {userDraggedOnce && mustWithAlerts.length>0 && (
         <div className="warn" style={{ margin:"10px 0", padding:"8px 12px", borderRadius:8 }}>
           {mustWithAlerts.map((w,i)=><div key={i}>⚠️ {w}</div>)}
         </div>
       )}
 
-      {/* כרטיסי קבוצות */}
       <section style={{ marginTop: 8 }}>
         <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:12 }}>
           {teams.map((t,ti)=>{
-            const stats = teamStats(t);
+            const a = avg(t.players); const s = sumRating(t.players);
             return (
               <div key={t.id} className="card" onDragOver={(e)=>e.preventDefault()} onDrop={(e)=>dropTeam(e,ti)}
                    style={{ border:"1px solid var(--edge,#24324a)",background:"var(--card,#0f1a2e)",borderRadius:14,padding:12,minHeight:160 }}>
                 <div style={{ display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:6 }}>
                   <div style={{ fontWeight:600 }}>{t.name}</div>
-                  <div style={{ fontSize:12, opacity:.85 }}>ממוצע {stats.avg} | סכ״כ {stats.sum.toFixed(1)}</div>
+                  <div style={{ fontSize:12, opacity:.85 }}>ממוצע {Math.round(a*10)/10} | סכ״כ {s.toFixed(1)}</div>
                 </div>
                 <ul style={{ listStyle:"disc", paddingInlineStart:20, margin:0 }}>
                   {t.players.map((p,pi)=>(
@@ -445,7 +510,6 @@ export default function DoForces() {
         </div>
       </section>
 
-      {/* טבלת שחקנים */}
       <section style={{ marginTop: 22 }}>
         <div style={{ display:"flex",alignItems:"baseline",justifyContent:"space-between" }}>
           <h3 style={{ margin:"0 0 8px 0", opacity:.9 }}>רשימת השחקנים</h3>
