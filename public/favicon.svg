@@ -1,14 +1,41 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="קטרגל גן-דניאל">
   <defs>
-    <style>
-      .a{fill:#0ea5a3}
-      .b{fill:#10b981}
-      .c{fill:#064e3b}
-      .t{font: 700 20px 'Heebo', Arial, sans-serif; fill:#e8eefc}
-    </style>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0ea44b"/>
+      <stop offset="100%" stop-color="#0b7a38"/>
+    </linearGradient>
+    <clipPath id="c">
+      <circle cx="256" cy="256" r="236"/>
+    </clipPath>
   </defs>
-  <rect width="128" height="128" rx="22" class="a"/>
-  <circle cx="64" cy="48" r="28" class="b"/>
-  <path class="c" d="M64 22a26 26 0 0 0-20 9l10 7 10-5 10 5 10-7A26 26 0 0 0 64 22zm-26 26a26 26 0 0 0 6 17l8-9-3-11-11-3zm52 0-11 3-3 11 8 9a26 26 0 0 0 6-17zM64 76a26 26 0 0 0 20-9l-10-7-10 5-10-5-10 7a26 26 0 0 0 20 9z"/>
-  <text x="64" y="112" text-anchor="middle" class="t">גן דניאל</text>
+
+  <!-- רקע עגול -->
+  <circle cx="256" cy="256" r="248" fill="#0b1220"/>
+  <circle cx="256" cy="256" r="236" fill="url(#g)"/>
+
+  <!-- מגרש -->
+  <g clip-path="url(#c)" opacity="0.25" stroke="#ffffff" stroke-width="8">
+    <rect x="60" y="96" width="392" height="320" fill="none"/>
+    <line x1="256" y1="96" x2="256" y2="416"/>
+    <circle cx="256" cy="256" r="26" fill="none"/>
+    <!-- רחבות -->
+    <rect x="60"  y="170" width="72"  height="172" fill="none"/>
+    <rect x="380" y="170" width="72"  height="172" fill="none"/>
+  </g>
+
+  <!-- כדור -->
+  <g transform="translate(256 256) scale(1.0)">
+    <circle r="62" fill="#ffffff" stroke="#0b1220" stroke-width="6"/>
+    <polygon points="0,-28 26,-8 16,22 -16,22 -26,-8" fill="#0b1220"/>
+    <g fill="#0b1220">
+      <circle cx="44" cy="-6" r="10"/>
+      <circle cx="-44" cy="-6" r="10"/>
+      <circle cx="24" cy="38" r="10"/>
+      <circle cx="-24" cy="38" r="10"/>
+    </g>
+  </g>
+
+  <!-- טקסט קצר -->
+  <text x="256" y="475" font-family="Heebo, Arial, sans-serif" font-size="44" fill="#e8eefc" text-anchor="middle">גן־דניאל</text>
 </svg>
