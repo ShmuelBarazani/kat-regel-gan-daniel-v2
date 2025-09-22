@@ -5,8 +5,8 @@ import Players from "./pages/Players";
 import TeamMaker from "./pages/TeamMaker";
 import Ranking from "./pages/Ranking";
 import Admin from "./pages/Admin";
-import "./styles.css";   // ✅ זה מה שמביא את העיצוב של מסך הקבוצות
-import "./print.css";    // ✅ לעיצוב Print Preview
+import "./styles.css";        // עיצוב כללי (קבוצות, טבלה)
+import "./styles/print.css";  // ✅ עיצוב Print Preview מהמיקום הנכון
 
 export default function App() {
   return (
