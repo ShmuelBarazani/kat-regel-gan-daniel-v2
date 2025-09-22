@@ -1,49 +1,36 @@
 // src/App.jsx
 import React from "react";
-import { BrowserRouter, Routes, Route, Link, useLocation } from "react-router-dom";
-
-import Players from "./pages/Players.jsx";
-import DoForces from "./pages/DoForces.jsx";   // מסך "קבוצות"
-import Ranking from "./pages/Ranking.jsx";
-import Admin from "./pages/Admin.jsx";
-
-function Tabs() {
-  const { pathname } = useLocation();
-  const Tab = ({ to, children }) => (
-    <Link to={to} className={`pill-tab ${pathname === to ? "active" : ""}`}>
-      {children}
-    </Link>
-  );
-
-  return (
-    <nav className="tabs" style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-      <Tab to="/players">שחקנים</Tab>
-      <Tab to="/forces">קבוצות</Tab>     {/* ← שינוי שם הטאב */}
-      <Tab to="/admin">מנהל</Tab>        {/* ← הוזז לפני דירוג */}
-      <Tab to="/ranking">דירוג</Tab>
-    </nav>
-  );
-}
+import { BrowserRouter as Router, Routes, Route, Link } from "react-router-dom";
+import Players from "./pages/Players";
+import TeamMaker from "./pages/TeamMaker";
+import Ranking from "./pages/Ranking";
+import Admin from "./pages/Admin";
+import "./styles.css";   // ✅ זה מה שמביא את העיצוב של מסך הקבוצות
+import "./print.css";    // ✅ לעיצוב Print Preview
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <div className="page-wrap" style={{ padding: "16px 12px" }}>
-        <header className="site-header" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-          <h1 style={{ margin: 0 }}>קטרגל־גן דניאל ⚽</h1>
-          <Tabs />
+    <Router>
+      <div className="app">
+        <header className="header">
+          <h1>קטרגל גן-דניאל ⚽</h1>
+          <nav>
+            <Link to="/players">שחקנים</Link>
+            <Link to="/teams">עשה כוחות / מחזור</Link>
+            <Link to="/ranking">דירוג</Link>
+            <Link to="/admin">מנהל</Link>
+          </nav>
         </header>
-
         <main>
           <Routes>
-            <Route path="/" element={<Players />} />
             <Route path="/players" element={<Players />} />
-            <Route path="/forces" element={<DoForces />} />
-            <Route path="/admin" element={<Admin />} />
+            <Route path="/teams" element={<TeamMaker />} />
             <Route path="/ranking" element={<Ranking />} />
+            <Route path="/admin" element={<Admin />} />
+            <Route path="*" element={<TeamMaker />} />
           </Routes>
         </main>
       </div>
-    </BrowserRouter>
+    </Router>
   );
 }
