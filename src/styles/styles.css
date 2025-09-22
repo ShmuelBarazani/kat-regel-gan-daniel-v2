@@ -1,113 +1,38 @@
-/* ✅ טבלת השחקנים */
-.table {
-  display: table;
-  width: 100%;
-  border-collapse: collapse;
-  margin-top: 10px;
-  background: #0f1a2e;
-  border-radius: 8px;
-  overflow: hidden;
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ערכת צבעים כללית */
+:root{
+  --bg:#0b1220; --card:#0f1a2e; --ink:#e8eefc; --muted:#9fb0cb;
+  --edge:#24324a; --accent1:#6a11cb; --accent2:#2575fc; --good:#27c463; --warn:#ff5c7a;
+}
+html,body{background:var(--bg); color:var(--ink)}
+*{box-sizing:border-box}
+
+/* קונטיינר דף */
+.page{
+  max-width:1200px; margin:0 auto; padding:1rem;
 }
 
-.row {
-  display: table-row;
+/* כפתור ראשי קטן */
+.btn{ @apply px-3 py-2 rounded-xl border border-[#24324a] hover:bg-white/5; }
+
+/* כותרת אפליקציה */
+.app-title{
+  font-size:clamp(20px,2.4vw,28px);
 }
 
-.cell {
-  display: table-cell;
-  padding: 8px 10px;
-  border-bottom: 1px solid #24324a;
-  vertical-align: middle;
-  text-align: center;
-  color: #e8eefc;
+/* בר עליון (טאבים) */
+.topbar{
+  position:sticky; top:0; z-index:50; backdrop-filter:saturate(1.2) blur(6px);
+  background: linear-gradient(180deg, rgba(11,18,32,.85), rgba(11,18,32,.65));
+  border-bottom:1px solid var(--edge);
 }
-
-.header .cell {
-  background: #146c43;
-  font-weight: bold;
-  color: #fff;
-  text-align: center;
+.tab{
+  @apply px-3 py-2 rounded-lg text-sm;
+  color:var(--muted);
 }
-
-/* ✅ כפתורי פעולה */
-.actions {
-  display: flex;
-  gap: 6px;
-  justify-content: center;
-}
-
-.actions button {
-  border: none;
-  padding: 4px 8px;
-  border-radius: 6px;
-  font-size: 0.8rem;
-  cursor: pointer;
-}
-
-button.edit {
-  background: #1a2740;
-  color: #e8eefc;
-}
-
-button.delete {
-  background: #ff5c7a;
-  color: #fff;
-}
-
-/* ✅ כרטיסי קבוצות */
-.teams-grid {
-  display: flex;
-  gap: 10px;
-  margin-bottom: 20px;
-}
-
-.team-card {
-  background: #0f1a2e;
-  border: 1px solid #24324a;
-  border-radius: 12px;
-  padding: 10px;
-  margin: 6px;
-  flex: 1;
-  min-width: 220px;
-}
-
-.team-head {
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.9rem;
-  margin-bottom: 6px;
-  color: #e8eefc;
-}
-
-.team-title {
-  font-weight: bold;
-}
-
-.team-meta {
-  color: #9fb0cb;
-}
-
-.team-body {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.pill {
-  background: #1a2740;
-  border-radius: 8px;
-  padding: 6px 10px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  cursor: grab;
-  color: #e8eefc;
-}
-
-.pill .remove {
-  background: transparent;
-  border: none;
-  color: #ff5c7a;
-  font-size: 0.8rem;
-  cursor: pointer;
+.tab[aria-current="page"]{
+  background:#0b1424; color:var(--ink); border:1px solid var(--edge);
 }
