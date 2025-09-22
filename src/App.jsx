@@ -19,27 +19,21 @@ const TAB_KEY = "katregel.ui.activeTab.v2";
 
 export default function App() {
   const [active, setActive] = useState(() => localStorage.getItem(TAB_KEY) || "players");
-
-  useEffect(() => {
-    localStorage.setItem(TAB_KEY, active);
-  }, [active]);
-
-  const ActiveComp = TABS.find((t) => t.key === active)?.component ?? PlayersPage;
+  useEffect(() => { localStorage.setItem(TAB_KEY, active); }, [active]);
+  const ActiveComp = TABS.find(t => t.key === active)?.component ?? PlayersPage;
 
   return (
     <div dir="rtl">
-      {/* בר עליון */}
       <header className="topbar">
         <div className="page flex items-center justify-between gap-3 py-3">
           <div className="app-title select-none">קטרגל גן־דניאל ⚽</div>
           <nav className="flex items-center gap-1 no-print" aria-label="ראשי">
-            {TABS.map((t) => (
+            {TABS.map(t => (
               <button
                 key={t.key}
                 className="tab"
-                aria-current={active === t.key ? "page" : undefined}
+                aria-current={active===t.key ? "page" : undefined}
                 onClick={() => setActive(t.key)}
-                title={t.label}
               >
                 {t.label}
               </button>
@@ -47,11 +41,7 @@ export default function App() {
           </nav>
         </div>
       </header>
-
-      {/* גוף הדף */}
-      <main className="page">
-        <ActiveComp />
-      </main>
+      <main className="page"><ActiveComp /></main>
     </div>
   );
 }
