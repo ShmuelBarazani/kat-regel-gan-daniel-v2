@@ -1,6 +1,6 @@
 // src/pages/Admin.jsx
 import React from "react";
-import { useAppStore } from "@/store/playerStorage";
+import { useAppStore } from "@/store/playerStorage.jsx";
 import MatchdayResults from "@/components/MatchdayResults";
 import SavedCycles from "@/components/SavedCycles";
 
@@ -12,7 +12,6 @@ export default function AdminPage() {
     cycles, exportAll, importAll
   } = useAppStore();
 
-  // מיפוי שחקנים לפי קבוצה לצורך כובשי שערים
   const playersByTeam = {};
   current.teams.forEach(t => {
     playersByTeam[t.id] = t.playerIds.map(pid => {
