@@ -1,12 +1,11 @@
-// src/App.jsx
 import React from "react";
 import { BrowserRouter as Router, Routes, Route, Link } from "react-router-dom";
 import Players from "./pages/Players";
 import TeamMaker from "./pages/TeamMaker";
 import Ranking from "./pages/Ranking";
 import Admin from "./pages/Admin";
-import "./styles.css";        // עיצוב כללי (קבוצות, טבלה)
-import "./styles/print.css";  // ✅ עיצוב Print Preview מהמיקום הנכון
+import "./styles.css";
+import "./styles/print.css";
 
 export default function App() {
   return (
@@ -16,7 +15,7 @@ export default function App() {
           <h1>קטרגל גן-דניאל ⚽</h1>
           <nav>
             <Link to="/players">שחקנים</Link>
-            <Link to="/teams">עשה כוחות / מחזור</Link>
+            <Link to="/teams">קבוצות</Link>
             <Link to="/ranking">דירוג</Link>
             <Link to="/admin">מנהל</Link>
           </nav>
