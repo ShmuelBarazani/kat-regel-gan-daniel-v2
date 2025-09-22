@@ -1,91 +1,15 @@
-/* Print preview – צבעי המערכת + פריסה 2x2 */
-@media print {
-  body {
-    background: #0b1220 !important;
-    color: #e8eefc !important;
-    font-family: Heebo, Arial, sans-serif;
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
-    margin: 0;
-    padding: 0;
-  }
+/* הדפסה: A4 נוף, מסגרות שחורות, ללא צבעי רקע */
+@page{ size:A4 landscape; margin:10mm; }
+@media print{
+  *{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  body{ background:#fff !important; color:#000 !important; }
+  .no-print{ display:none !important; }
 
-  /* הסתרה של אלמנטים מיותרים במסך */
-  .header,
-  nav,
-  .toolbar,
-  .app > *:not(.print-view) {
-    display: none !important;
+  /* קלפים/טבלאות עם מסגרות */
+  .print-card{
+    border:1px solid #000 !important; border-radius:0 !important; box-shadow:none !important;
+    background:#fff !important; color:#000 !important;
   }
-
-  .print-view {
-    display: grid !important;
-    grid-template-columns: 1fr 1fr;
-    grid-template-rows: 1fr 1fr;
-    gap: 12px;
-    padding: 12px;
-    height: 100vh;
-    box-sizing: border-box;
-    background: #0b1220 !important;
-  }
-
-  .print-team {
-    background: #0f1a2e !important;
-    border: 1px solid #24324a !important;
-    border-radius: 12px;
-    padding: 10px;
-    color: #e8eefc !important;
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-start;
-    font-size: 14px;
-    page-break-inside: avoid;
-  }
-
-  .print-team h3 {
-    margin: 0 0 6px 0;
-    font-size: 16px;
-    font-weight: bold;
-    color: #e8eefc !important;
-    text-align: right;
-  }
-
-  .print-team table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 13px;
-  }
-
-  .print-team th,
-  .print-team td {
-    border: 1px solid #24324a;
-    padding: 4px;
-    text-align: center;
-  }
-
-  .print-team th {
-    background: #1a2740 !important;
-    color: #e8eefc !important;
-  }
-
-  /* ✅ בלי שורות ריקות */
-  .print-team tr:empty {
-    display: none !important;
-  }
-
-  /* טבלת תוצאות בתחתית */
-  .results {
-    margin-top: 8px;
-    display: flex;
-    justify-content: space-around;
-    font-size: 13px;
-  }
-
-  .results span {
-    border: 1px solid #24324a;
-    border-radius: 6px;
-    padding: 2px 6px;
-    background: #1a2740 !important;
-    color: #e8eefc !important;
-  }
+  table{ border-collapse:collapse !important; }
+  th,td{ border:1px solid #000 !important; padding:4px 6px !important; }
 }
