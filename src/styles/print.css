@@ -1,3 +1,4 @@
+/* src/styles/print.css */
 :root{
   --bg:#0b1220; --card:#0f1a2e; --ink:#e8eefc; --muted:#9fb0cb;
   --edge:#24324a; --accent:#2e7d32;
@@ -60,8 +61,6 @@
   .printable, .printable * { visibility: visible !important; }
   .printable{ position: fixed; inset: 0 0 0 0; margin:0 !important; padding:0 !important; }
   .sheets-grid{ gap:8px; }
-  .sheet{ transform: scale(0.98); transform-origin: center; }
-  /* עוצרים שבירת דף – הכל בעמוד אחד */
+  .sheet{ transform: scale(0.98); transform-origin: center; page-break-inside: avoid; }
   html, body { height: auto !important; }
-  .sheet { page-break-inside: avoid; }
 }
