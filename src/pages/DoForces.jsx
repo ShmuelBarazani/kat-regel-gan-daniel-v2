@@ -6,13 +6,13 @@ import {
   violatesAvoidWith,
 } from "../logic/balance";
 
-// helpers
+// ===== helpers =====
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 const sum = (arr, sel = (x) => x) => arr.reduce((s, x) => s + sel(x), 0);
 const avg = (arr, sel = (x) => x) =>
   arr.length ? +(sum(arr, sel) / arr.length).toFixed(2) : 0;
 
-// storage
+// ===== storage (כמו אצלך) =====
 function loadPlayers() {
   try {
     const raw = localStorage.getItem("players");
@@ -24,7 +24,9 @@ function loadPlayers() {
   return [];
 }
 function savePlayers(players) {
-  try { localStorage.setItem("players", JSON.stringify(players)); } catch {}
+  try {
+    localStorage.setItem("players", JSON.stringify(players));
+  } catch {}
 }
 
 export default function DoForces() {
@@ -56,16 +58,18 @@ export default function DoForces() {
   const handleDragOver = (e) => e.preventDefault();
 
   function dropToTeam(targetTeamIdx) {
-    const { playerId } = dragRef.current; if (!playerId) return;
-    const player = findPlayerById(playerId); if (!player) return;
+    const { playerId } = dragRef.current;
+    if (!playerId) return;
+    const player = findPlayerById(playerId);
+    if (!player) return;
 
-    // "לא-עם" — חסימה
+    // חסימת "לא־עם"
     if (violatesAvoidWith(teams[targetTeamIdx], player)) {
       openToast("warn", "הגרירה נחסמה: התנגשות 'לא־עם' בקבוצה היעד");
       return;
     }
 
-    // next-state
+    // next state
     const next = teams.map((t) => t.slice());
     for (const t of next) {
       const i = t.findIndex((x) => x.id === player.id);
@@ -79,7 +83,7 @@ export default function DoForces() {
       return;
     }
 
-    // אזהרת פירוק "חייב-עם" (לא חוסם)
+    // אזהרת פירוק חייב־עם (לא חוסם)
     const unit = buildMustUnits(activePlayers).find((u) => u.some((x) => x.id === player.id));
     if (unit) {
       const idx = next.findIndex((t) => t.some((x) => x.id === unit[0].id));
@@ -89,10 +93,17 @@ export default function DoForces() {
 
     setTeams(next);
   }
-  const handleDropOnTeam = (e, idx) => { e.preventDefault(); dropToTeam(idx); dragRef.current = { playerId: null, fromTeamIdx: null }; };
+
+  const handleDropOnTeam = (e, idx) => {
+    e.preventDefault();
+    dropToTeam(idx);
+    dragRef.current = { playerId: null, fromTeamIdx: null };
+  };
+
   const handleDropBackToPool = (e) => {
     e.preventDefault();
-    const { playerId } = dragRef.current; if (!playerId) return;
+    const { playerId } = dragRef.current;
+    if (!playerId) return;
     setTeams((ts) => ts.map((t) => t.filter((x) => x.id !== playerId)));
     dragRef.current = { playerId: null, fromTeamIdx: null };
   };
@@ -107,6 +118,7 @@ export default function DoForces() {
       openToast("err", e.message || "כשל ביצירת קבוצות");
     }
   }
+
   function saveDraftCycle() {
     const payload = {
       id: Date.now().toString(36),
@@ -114,7 +126,9 @@ export default function DoForces() {
       teamCount,
       playersActive: activePlayers.length,
       playersAssigned: assignedCount,
-      teams: teams.map((t) => t.map((p) => ({ id: p.id, name: p.name, pos: p.pos, rating: p.rating }))),
+      teams: teams.map((t) =>
+        t.map((p) => ({ id: p.id, name: p.name, pos: p.pos, rating: p.rating }))
+      ),
     };
     try {
       const raw = localStorage.getItem("draftCycles");
@@ -127,7 +141,7 @@ export default function DoForces() {
     }
   }
 
-  // ===== table =====
+  // ===== table behaviour =====
   const [sortKey, setSortKey] = useState("name");
   const [sortDir, setSortDir] = useState("asc");
   const [nameFilter, setNameFilter] = useState("");
@@ -138,7 +152,8 @@ export default function DoForces() {
       .slice();
     const dir = sortDir === "asc" ? 1 : -1;
     rows.sort((a, b) => {
-      let A = a[sortKey], B = b[sortKey];
+      let A = a[sortKey],
+        B = b[sortKey];
       if (typeof A === "string") A = A.toLowerCase();
       if (typeof B === "string") B = B.toLowerCase();
       if (A < B) return -1 * dir;
@@ -148,23 +163,36 @@ export default function DoForces() {
     return rows;
   }, [players, sortKey, sortDir, nameFilter]);
 
-  const toggleSort = (k) => (k === sortKey ? setSortDir((d) => (d === "asc" ? "desc" : "asc")) : (setSortKey(k), setSortDir("asc")));
-  const togglePlaying = (id) => setPlayers((ps) => ps.map((p) => (p.id === id ? { ...p, playing: !p.playing } : p)));
-  const onEditPos = (id, pos) => setPlayers((ps) => ps.map((p) => (p.id === id ? { ...p, pos } : p)));
-  const onEditRating = (id, v) => { const num = clamp(parseFloat(v) || 0, 0, 10); setPlayers((ps) => ps.map((p) => (p.id === id ? { ...p, rating: num } : p))); };
+  const toggleSort = (k) =>
+    k === sortKey ? setSortDir((d) => (d === "asc" ? "desc" : "asc")) : (setSortKey(k), setSortDir("asc"));
+  const togglePlaying = (id) =>
+    setPlayers((ps) => ps.map((p) => (p.id === id ? { ...p, playing: !p.playing } : p)));
+  const onEditPos = (id, pos) =>
+    setPlayers((ps) => ps.map((p) => (p.id === id ? { ...p, pos } : p)));
+  const onEditRating = (id, v) => {
+    const num = clamp(parseFloat(v) || 0, 0, 10);
+    setPlayers((ps) => ps.map((p) => (p.id === id ? { ...p, rating: num } : p)));
+  };
   const onEditLists = (id) => {
-    const pl = players.find((p) => p.id === id); if (!pl) return;
-    const must  = prompt("חייב־עם (שמות מופרדים בפסיק):", (pl.mustWith || []).join(","));
+    const pl = players.find((p) => p.id === id);
+    if (!pl) return;
+    const must = prompt("חייב־עם (שמות מופרדים בפסיק):", (pl.mustWith || []).join(","));
     const avoid = prompt("לא־עם (שמות מופרדים בפסיק):", (pl.avoidWith || []).join(","));
-    setPlayers((ps) => ps.map((p) => p.id === id ? {
-      ...p,
-      mustWith: must ? must.split(",").map((s) => s.trim()).filter(Boolean) : [],
-      avoidWith: avoid ? avoid.split(",").map((s) => s.trim()).filter(Boolean) : [],
-    } : p));
+    setPlayers((ps) =>
+      ps.map((p) =>
+        p.id === id
+          ? {
+              ...p,
+              mustWith: must ? must.split(",").map((s) => s.trim()).filter(Boolean) : [],
+              avoidWith: avoid ? avoid.split(",").map((s) => s.trim()).filter(Boolean) : [],
+            }
+          : p
+      )
+    );
   };
   const onDelete = (id) => setPlayers((ps) => ps.filter((p) => p.id !== id));
 
-  // ===== stats =====
+  // ===== card stats =====
   const teamStats = teams.map((t) => ({
     avg: +(avg(t, (x) => x.rating) || 0).toFixed(2),
     sum: +sum(t, (x) => x.rating).toFixed(1),
@@ -172,7 +200,7 @@ export default function DoForces() {
 
   return (
     <div className="mx-auto px-3" dir="rtl">
-      {/* פס עליון – מונים משמאל, כפתורים מימין */}
+      {/* פס עליון: מונים משמאל, כפתורים מימין */}
       <div className="flex items-center justify-between mt-4 mb-3">
         <div className="flex items-center gap-4 text-sm text-slate-300">
           <div>פעילים: <b>{activePlayers.length}</b></div>
@@ -180,47 +208,80 @@ export default function DoForces() {
           <div className="flex items-center gap-2">
             <label>מס׳ קבוצות</label>
             <input
-              type="number" min={2} max={8} value={teamCount}
+              type="number"
+              min={2}
+              max={8}
+              value={teamCount}
               onChange={(e) => {
                 const val = clamp(+e.target.value || 2, 2, 8);
                 setTeamCount(val);
-                setTeams(Array.from({ length: val }, () => [])); // אפס כרטיסים בעת שינוי
+                setTeams(Array.from({ length: val }, () => [])); // מאפס כרטיסים בעת שינוי
               }}
               className="w-16 rounded-md bg-[#0f1a2e] text-white border border-[#24324a] px-2 py-1"
             />
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => setHideCardRatings((v) => !v)} className="rounded-xl border border-[#24324a] bg-[#0f1a2e] hover:bg-[#182544] px-3 py-2 text-sm">
+          <button
+            onClick={() => setHideCardRatings((v) => !v)}
+            className="rounded-xl border border-[#24324a] bg-[#0f1a2e] hover:bg-[#182544] px-3 py-2 text-sm"
+          >
             {hideCardRatings ? "הצג ציונים (בכרטיסים)" : "הסתר ציונים (בכרטיסים בלבד)"}
           </button>
-          <button onClick={doMakeTeams} className="rounded-xl bg-green-600 hover:bg-green-700 px-3 py-2 text-sm text-white shadow">עשה כוחות</button>
-          <button onClick={saveDraftCycle} className="rounded-xl bg-slate-600 hover:bg-slate-700 px-3 py-2 text-sm text-white">שמור מחזור (טיוטה)</button>
+          <button
+            onClick={doMakeTeams}
+            className="rounded-xl bg-green-600 hover:bg-green-700 px-3 py-2 text-sm text-white shadow"
+          >
+            עשה כוחות
+          </button>
+          <button
+            onClick={saveDraftCycle}
+            className="rounded-xl bg-slate-600 hover:bg-slate-700 px-3 py-2 text-sm text-white"
+          >
+            שמור מחזור (טיוטה)
+          </button>
         </div>
       </div>
 
-      {/* ===== קבוצות למחזור — למעלה (כמו בצילום, עם bullets, בלי מונה שחקנים) ===== */}
+      {/* ===== קבוצות — למעלה (לוק כמו בתמונה) ===== */}
       <div className="rounded-2xl border border-[#24324a] bg-[#0f1a2e] mb-4">
-        <div className="px-4 py-2 text-white text-sm bg-[#1e5a3f] rounded-t-2xl">קבוצות למחזור</div>
+        <div className="flex items-center justify-between px-4 py-2 bg-[#0f1a2e] border-b border-[#24324a] rounded-t-2xl">
+          <div className="text-white text-sm font-medium">קבוצות למחזור</div>
+          <div className="text-xs text-slate-400">גרור שחקן מהטבלה לקבוצה, או חזרה לטבלה להסרה.</div>
+        </div>
 
-        <div className="grid lg:grid-cols-4 md:grid-cols-2 grid-cols-1 gap-3 p-3">
+        <div className="grid xl:grid-cols-4 lg:grid-cols-3 sm:grid-cols-2 grid-cols-1 gap-3 p-3">
           {teams.map((team, idx) => (
-            <div key={idx} className="rounded-xl border border-[#24324a] bg-[#0f1a2e]"
-                 onDragOver={handleDragOver} onDrop={(e) => handleDropOnTeam(e, idx)}>
+            <div
+              key={idx}
+              className="rounded-xl border border-[#24324a] bg-[#0f1a2e]"
+              onDragOver={handleDragOver}
+              onDrop={(e) => handleDropOnTeam(e, idx)}
+            >
               <div className="flex items-center justify-between px-3 py-2">
                 <div className="text-slate-200 font-semibold">קבוצה {idx + 1}</div>
                 <div className="text-[12px] text-slate-300">ממוצע {teamStats[idx].avg} | סכ״כ {teamStats[idx].sum}</div>
               </div>
               <div className="h-px bg-[#24324a]" />
+
               <ul className="p-3 space-y-1">
                 {team.map((p) => (
-                  <li key={p.id} draggable onDragStart={(e) => handleDragStart(e, p.id, idx)}
-                      className="flex items-center justify-between px-2 py-1 rounded-md border border-transparent hover:border-[#24324a] hover:bg-[#101b31] cursor-move">
+                  <li
+                    key={p.id}
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, p.id, idx)}
+                    className="flex items-center justify-between px-2 py-1 rounded-md border border-transparent hover:border-[#24324a] hover:bg-[#101b31] cursor-move"
+                  >
                     <div className="flex items-center gap-2 text-[13px] text-slate-200">
                       <span className="text-slate-500">•</span>
-                      <span>{p.name} <span className="text-[11px] text-slate-400">({p.pos})</span></span>
+                      <span>
+                        {p.name}{" "}
+                        <span className="text-[11px] text-slate-400">({p.pos})</span>
+                      </span>
                     </div>
-                    {!hideCardRatings && <div className="text-[13px] text-slate-200">{p.rating}</div>}
+                    {!hideCardRatings && (
+                      <div className="text-[13px] text-slate-200">{p.rating}</div>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -230,15 +291,22 @@ export default function DoForces() {
       </div>
 
       {/* ===== טבלת השחקנים — למטה ===== */}
-      <div className="rounded-2xl border border-[#24324a] bg-[#0f1a2e] overflow-hidden"
-           onDragOver={handleDragOver} onDrop={handleDropBackToPool}>
+      <div
+        className="rounded-2xl border border-[#24324a] bg-[#0f1a2e] overflow-hidden"
+        onDragOver={handleDragOver}
+        onDrop={handleDropBackToPool}
+      >
         <div className="flex items-center justify-between bg-[#1e5a3f] text-white py-2 px-3 text-sm">
           <div>רשימת השחקנים</div>
-          <input placeholder="חפש שם…" value={nameFilter} onChange={(e) => setNameFilter(e.target.value)}
-                 className="rounded-md bg-[#0f1a2e] text-white border border-[#24324a] px-2 py-1 text-xs w-40" />
+          <input
+            placeholder="חפש שם…"
+            value={nameFilter}
+            onChange={(e) => setNameFilter(e.target.value)}
+            className="rounded-md bg-[#0f1a2e] text-white border border-[#24324a] px-2 py-1 text-xs w-40"
+          />
         </div>
 
-        <div className="max-h-[480px] overflow-auto">
+        <div className="max-h-[500px] overflow-auto">
           <table className="w-full text-right">
             <thead className="sticky top-0 bg-[#0f1a2e]">
               <tr className="text-slate-300 text-sm">
@@ -258,10 +326,18 @@ export default function DoForces() {
             </thead>
             <tbody>
               {tablePlayers.map((p) => (
-                <tr key={p.id} className="border-t border-[#13213a] hover:bg-[#101b31] cursor-grab"
-                    draggable onDragStart={(e) => handleDragStart(e, p.id, null)}>
+                <tr
+                  key={p.id}
+                  className="border-t border-[#13213a] hover:bg-[#101b31] cursor-grab"
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, p.id, null)}
+                >
                   <td className="py-2 px-3">
-                    <input type="checkbox" checked={!!p.playing} onChange={() => togglePlaying(p.id)} />
+                    <input
+                      type="checkbox"
+                      checked={!!p.playing}
+                      onChange={() => togglePlaying(p.id)}
+                    />
                   </td>
                   <td className="py-2 px-3">{p.name}</td>
                   <td className="py-2 px-3">{p.pos}</td>
@@ -274,32 +350,58 @@ export default function DoForces() {
                   </td>
                   <td className="py-2 px-3">
                     <div className="flex items-center gap-2 text-xs">
-                      <button onClick={() => onEditLists(p.id)} className="rounded-full bg-[#1e5a3f] hover:bg-[#23704e] text-white px-3 py-1">ערוך</button>
-                      <select value={p.pos} onChange={(e) => onEditPos(p.id, e.target.value)} className="bg-[#0f1a2e] border border-[#24324a] rounded px-2 py-1">
-                        <option>GK</option><option>DF</option><option>MF</option><option>FW</option>
+                      <button
+                        onClick={() => onEditLists(p.id)}
+                        className="rounded-full bg-[#1e5a3f] hover:bg-[#23704e] text-white px-3 py-1"
+                      >
+                        ערוך
+                      </button>
+                      <select
+                        value={p.pos}
+                        onChange={(e) => onEditPos(p.id, e.target.value)}
+                        className="bg-[#0f1a2e] border border-[#24324a] rounded px-2 py-1"
+                      >
+                        <option>GK</option>
+                        <option>DF</option>
+                        <option>MF</option>
+                        <option>FW</option>
                       </select>
-                      <input type="number" step="0.5" min={0} max={10} defaultValue={p.rating}
-                             onBlur={(e) => onEditRating(p.id, e.target.value)}
-                             className="w-16 bg-[#0f1a2e] border border-[#24324a] rounded px-2 py-1" />
+                      <input
+                        type="number"
+                        step="0.5"
+                        min={0}
+                        max={10}
+                        defaultValue={p.rating}
+                        onBlur={(e) => onEditRating(p.id, e.target.value)}
+                        className="w-16 bg-[#0f1a2e] border border-[#24324a] rounded px-2 py-1"
+                      />
                     </div>
                   </td>
                   <td className="py-2 px-3 text-center">
-                    <button onClick={() => onDelete(p.id)} className="text-red-400 hover:text-red-300 text-xs">מחק</button>
+                    <button
+                      onClick={() => onDelete(p.id)}
+                      className="text-red-400 hover:text-red-300 text-xs"
+                    >
+                      מחק
+                    </button>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-
-        <div className="text-xs text-slate-400 px-3 py-2">טיפ: גרור שחקן מהטבלה לאחת הקבוצות, או חזרה לטבלה כדי להסירו.</div>
       </div>
 
       {toast && (
-        <div className={`fixed bottom-4 right-4 px-4 py-2 rounded-xl shadow text-sm ${
-          toast.type==='ok' ? 'bg-green-600 text-white'
-          : toast.type==='warn' ? 'bg-yellow-600 text-white'
-          : 'bg-red-600 text-white'}`}>
+        <div
+          className={`fixed bottom-4 right-4 px-4 py-2 rounded-xl shadow text-sm ${
+            toast.type === "ok"
+              ? "bg-green-600 text-white"
+              : toast.type === "warn"
+              ? "bg-yellow-600 text-white"
+              : "bg-red-600 text-white"
+          }`}
+        >
           {toast.msg}
         </div>
       )}
