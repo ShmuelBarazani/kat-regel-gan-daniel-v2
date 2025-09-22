@@ -9,14 +9,6 @@ import {
 } from "@/lib/storage";
 import { computeTeamStats, isBalanced, movePlayerBalanced } from "@/logic/balance";
 
-// ----- State shape -----
-// {
-//   players: Player[]
-//   current: { teams: Team[], fixtures: Fixture[], scorers: Record<playerId, number> }
-//   cycles: { id, name, dateISO }[]
-//   ui: { sortBy: 'name'|'pos'|'rating'|'plays', sortDir:'asc'|'desc' }
-// }
-
 const AppCtx = createContext(null);
 
 function initState() {
@@ -132,11 +124,9 @@ function defaultTeams(n = 4) {
   }));
 }
 
-// ----- Provider -----
 export function AppProvider({ children }) {
   const [state, dispatch] = useReducer(reducer, undefined, initState);
 
-  // ----- Selectors -----
   const sortedPlayers = useMemo(() => {
     const { sortBy, sortDir } = state.ui;
     const factor = sortDir === "asc" ? 1 : -1;
@@ -154,7 +144,6 @@ export function AppProvider({ children }) {
   const teamStats = useMemo(() => computeTeamStats(state.current.teams, state.players), [state.current.teams, state.players]);
   const teamsBalanced = useMemo(() => isBalanced(state.current.teams), [state.current.teams]);
 
-  // ----- Actions -----
   const addPlayer = useCallback((player) => dispatch({ type: "players/add", player }), []);
   const updatePlayer = useCallback((player) => dispatch({ type: "players/update", player }), []);
   const deletePlayer = useCallback((id) => dispatch({ type: "players/delete", id }), []);
@@ -233,7 +222,6 @@ export function AppProvider({ children }) {
   const sortBy = useCallback((field) => dispatch({ type: "ui/sort", sortBy: field }), []);
 
   const value = useMemo(() => ({
-    // state
     players: state.players,
     sortedPlayers,
     current: state.current,
@@ -242,29 +230,11 @@ export function AppProvider({ children }) {
     cycles: state.cycles,
     ui: state.ui,
 
-    // actions
-    addPlayer,
-    updatePlayer,
-    deletePlayer,
-    setPlayers,
-    togglePlayerPlays,
-
-    setTeams,
-    toggleShowRatings,
-    movePlayer,
-    resetCurrent,
-
-    setFixtureScore,
-    setScorer,
-    createFixturesFromTeams,
-
-    saveSnapshot,
-    openSnapshot,
-    deleteCycle,
-
-    exportAll,
-    importAll,
-
+    addPlayer, updatePlayer, deletePlayer, setPlayers, togglePlayerPlays,
+    setTeams, toggleShowRatings, movePlayer, resetCurrent,
+    setFixtureScore, setScorer, createFixturesFromTeams,
+    saveSnapshot, openSnapshot, deleteCycle,
+    exportAll, importAll,
     sortBy,
   }), [
     state, sortedPlayers, teamStats, teamsBalanced,
@@ -272,8 +242,7 @@ export function AppProvider({ children }) {
     setTeams, toggleShowRatings, movePlayer, resetCurrent,
     setFixtureScore, setScorer, createFixturesFromTeams,
     saveSnapshot, openSnapshot, deleteCycle,
-    exportAll, importAll,
-    sortBy
+    exportAll, importAll, sortBy
   ]);
 
   return <AppCtx.Provider value={value}>{children}</AppCtx.Provider>;
@@ -290,6 +259,8 @@ function sortKey(p, by) {
     case "plays": return p.plays ? 1 : 0;
     case "pos": return p.pos || "";
     case "rating": return Number(p.rating) || 0;
+    case "must": return (p.mustWith?.length || 0);      // מיון לפי כמות “חייב עם”
+    case "avoid": return (p.avoidWith?.length || 0);     // מיון לפי כמות “לא עם”
     case "name":
     default:
       return (p.name || "").toString();
