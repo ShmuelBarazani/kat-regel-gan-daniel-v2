@@ -2,14 +2,14 @@
 import React, { useEffect, useMemo, useState } from "react";
 import playersDataFallback from "../../data/players.json";
 
-/* =================== Storage Keys =================== */
+/* ============== Storage Keys ============== */
 const LS = {
   DRAFT: "teams_draft_v1",
   UI: "teams_ui_state_v1",
   ROUNDS: "rounds_store_v1",
 };
 
-/* =================== Players Loader =================== */
+/* ============== Players Loader ============== */
 async function tryLoadFromStore() {
   try {
     const mod = await import("../store/playerStorage.js");
@@ -61,17 +61,15 @@ async function loadPlayersUnified() {
       id: p.id ?? `${p.name || "ללא שם"}-${idx}`,
       name: (p.name || "").trim(),
       pos: p.pos || "MF",
-      rating:
-        typeof p.rating === "number" ? p.rating : parseFloat(p.rating ?? 0) || 0,
+      rating: typeof p.rating === "number" ? p.rating : parseFloat(p.rating ?? 0) || 0,
       mustWith: Array.isArray(p.mustWith) ? p.mustWith : [],
       notWith: Array.isArray(p.notWith) ? p.notWith : [],
-      active:
-        p.active !== false && p.playing !== false && p.isActive !== false,
+      active: p.active !== false && p.playing !== false && p.isActive !== false,
     }))
     .filter((p) => p.active);
 }
 
-/* =================== Helpers =================== */
+/* ============== Helpers ============== */
 const byRatingDesc = (a, b) => (b.rating || 0) - (a.rating || 0);
 const sumRating = (ps) => ps.reduce((s, p) => s + (p.rating || 0), 0);
 const avg = (ps) => (ps.length ? sumRating(ps) / ps.length : 0);
@@ -89,6 +87,8 @@ function sizeTargets(playersCount, teamsCount) {
   const extra = playersCount % teamsCount;
   return Array.from({ length: teamsCount }, (_, i) => base + (i < extra ? 1 : 0));
 }
+
+/* ============== Clusters (must-with) ============== */
 function buildClusters(players) {
   const map = new Map(players.map((p, i) => [p.name, i]));
   const parent = players.map((_, i) => i);
@@ -100,12 +100,14 @@ function buildClusters(players) {
   players.forEach((p, i) =>
     (p.mustWith || []).forEach((m) => map.has(m) && union(i, map.get(m)))
   );
+
   const groups = new Map();
   players.forEach((p, i) => {
     const r = find(i);
     if (!groups.has(r)) groups.set(r, []);
     groups.get(r).push(p);
   });
+
   const clusters = [];
   for (const g of groups.values()) {
     const members = g.slice().sort(byRatingDesc);
@@ -117,9 +119,7 @@ function buildClusters(players) {
       ratingSum: sumRating(members),
     });
   }
-  clusters.sort(
-    (a, b) => b.ratingSum - a.ratingSum || b.size - a.size || rnd()
-  );
+  clusters.sort((a, b) => b.ratingSum - a.ratingSum || b.size - a.size || rnd());
   return clusters;
 }
 const violatesNotWith = (teamPlayers, cl) => {
@@ -128,7 +128,8 @@ const violatesNotWith = (teamPlayers, cl) => {
   return cl.notWith.some((x) => names.has(x));
 };
 
-/* =================== Balancer =================== */
+/* ============== Balancer ============== */
+// חלוקה ראשונית לפי יעדי גודל ולפי סכום נמוך
 function initialAssign(players, teamsCount) {
   const targets = sizeTargets(players.length, teamsCount);
   const teams = emptyTeams(teamsCount);
@@ -145,7 +146,8 @@ function initialAssign(players, teamsCount) {
       );
     let placed = false;
     for (const o of order) {
-      if (o.t.players.length + cl.size > targets[o.i]) continue;
+      const will = o.t.players.length + cl.size;
+      if (will > targets[o.i]) continue;
       if (violatesNotWith(o.t.players, cl)) continue;
       o.t.players.push(...cl.members);
       placed = true;
@@ -170,24 +172,39 @@ function initialAssign(players, teamsCount) {
   return { teams, targets };
 }
 
+// בניית "חבילות" בתוך קבוצה (כדי לא לשבור חייב־עם באיזון)
+function teamBundles(team) {
+  const res = [];
+  const used = new Set();
+  for (const p of team.players) {
+    if (used.has(p)) continue;
+    const g = team.players.filter(
+      (q) => q === p || q.mustWith?.includes(p.name) || p.mustWith?.includes(q.name)
+    );
+    g.forEach((x) => used.add(x));
+    res.push({
+      members: g,
+      size: g.length,
+      ratingSum: sumRating(g),
+      names: new Set(g.map((m) => m.name)),
+      notWith: Array.from(new Set(g.flatMap((m) => m.notWith || []))),
+    });
+  }
+  if (!res.length) team.players.forEach((p) =>
+    res.push({ members: [p], size: 1, ratingSum: p.rating || 0, names: new Set([p.name]), notWith: p.notWith || [] })
+  );
+  return res;
+}
+
+// איזון קשיח של גדלים (הפרש ≤ 1) — מעביר "חבילות" שנכנסות, ומקטין פערי ממוצעים
 function strictSizeRebalance(teams, targets) {
-  // דואג שהפרש שחקנים בין קבוצות לא יעלה על ±1
   const count = (t) => t.players.length;
-  const AVERAGES = () => teams.map((t) => avg(t.players));
-  const MEAN = () => {
-    const a = AVERAGES();
+  const mean = () => {
+    const a = teams.map((t) => avg(t.players));
     return a.reduce((s, v) => s + v, 0) / a.length;
   };
+  let guard = 300;
 
-  // כדי לא לשבור "חייב־עם": נימנע מהעברת שחקן שיש לו mustWith שנמצא איתו באותה קבוצה
-  const canMoveIndividually = (team, player) => {
-    if (!player?.mustWith?.length) return true;
-    const names = new Set(team.players.map((p) => p.name));
-    return !player.mustWith.some((m) => names.has(m)); // אם יש mustWith יחד—לא מעבירים לבד
-  };
-
-  // כל עוד יש הפרש > 1, מעבירים שחקן מהגדולה לקטנה — השחקן שמקטין הכי הרבה את פער הממוצעים
-  let guard = 200;
   while (guard-- > 0) {
     const maxIdx = teams.reduce((iBest, t, i) => (count(t) > count(teams[iBest]) ? i : iBest), 0);
     const minIdx = teams.reduce((iBest, t, i) => (count(t) < count(teams[iBest]) ? i : iBest), 0);
@@ -195,43 +212,40 @@ function strictSizeRebalance(teams, targets) {
 
     const from = teams[maxIdx];
     const to = teams[minIdx];
-    const mean = MEAN();
+    const bundles = teamBundles(from).sort((a, b) => a.size - b.size || a.ratingSum - b.ratingSum);
 
-    let best = null; // {player, scoreImprovement}
-    for (const p of from.players) {
-      if (!canMoveIndividually(from, p)) continue;
-      // בדיקת not-with ביעד
-      const targetHasConflict = (to.players || []).some((q) => p.notWith?.includes(q.name) || q.notWith?.includes(p.name));
-      if (targetHasConflict) continue;
+    let moved = false;
+    for (const bundle of bundles) {
+      // חייב שהחבילה תיכנס בגודל (יעד המינימום של to הוא targets[minIdx], מותר ±1)
+      const toAfter = to.players.length + bundle.size;
+      if (toAfter > targets[minIdx] + 1) continue;
 
-      // נחשב כמה העברה מגדילה "התקרבות" לממוצע כולל
-      const fromNewAvg = avg(from.players.filter((x) => x.id !== p.id));
-      const toNewAvg = avg([...to.players, p]);
-      const scoreBefore = Math.abs(avg(from.players) - mean) + Math.abs(avg(to.players) - mean);
-      const scoreAfter = Math.abs(fromNewAvg - mean) + Math.abs(toNewAvg - mean);
-      const improvement = scoreBefore - scoreAfter;
+      // לא־עם ביעד
+      if (violatesNotWith(to.players, bundle)) continue;
 
-      if (!best || improvement > best.improvement) best = { player: p, improvement };
+      // הערכת שיפור בממוצעים
+      const beforeScore =
+        Math.abs(avg(from.players) - mean()) + Math.abs(avg(to.players) - mean());
+      const fromNew = from.players.filter((p) => !bundle.names.has(p.name));
+      const toNew = [...to.players, ...bundle.members];
+      const afterScore =
+        Math.abs(avg(fromNew) - mean()) + Math.abs(avg(toNew) - mean());
+
+      // מבצעים מעבר לחבילה "הכי טובה" שמקטינה סטייה (או הראשונה שנכנסת אם אין שיפור)
+      if (afterScore <= beforeScore || bundles[bundles.length - 1] === bundle) {
+        from.players = fromNew;
+        to.players = toNew.sort(byRatingDesc);
+        moved = true;
+        break;
+      }
     }
-
-    if (!best) {
-      // לא נמצא מועמד טוב (בגלל must-with/קונפליקטים) — נבחר את בעל הציון הנמוך שלא שובר אילוצים
-      const fallback = from.players
-        .filter((p) => canMoveIndividually(from, p) && !(to.players || []).some((q) => p.notWith?.includes(q.name) || q.notWith?.includes(p.name)))
-        .sort((a, b) => (a.rating || 0) - (b.rating || 0))[0];
-      if (!fallback) break; // אין מה להעביר — נשבור לולאה כדי לא להתקע
-      best = { player: fallback, improvement: 0 };
-    }
-
-    // מעבירים
-    from.players = from.players.filter((x) => x.id !== best.player.id);
-    to.players = [...to.players, best.player].sort(byRatingDesc);
+    if (!moved) break; // תקוע — יוצאים
   }
   return teams;
 }
 
-function varianceTighten(teams, tries = 2) {
-  // שיפצור קטן לצמצום פערי ממוצעים ע"י החלפות נקודתיות (ללא שינוי גדלים)
+// ליטוש סטיות ממוצעים בהחלפות נקודתיות (ללא שינוי גדלים)
+function varianceTighten(teams, rounds = 2) {
   const copy = (xs) => xs.map((t) => ({ ...t, players: t.players.slice() }));
   const score = (ts) => {
     const a = ts.map((t) => avg(t.players));
@@ -243,27 +257,25 @@ function varianceTighten(teams, tries = 2) {
   let best = copy(teams);
   let bestS = score(best);
 
-  for (let k = 0; k < tries; k++) {
+  for (let r = 0; r < rounds; r++) {
     for (let i = 0; i < best.length; i++) {
       for (let j = i + 1; j < best.length; j++) {
         const A = best[i], B = best[j];
-        // ננסה החלפה חד-חד ערכית שמצמצמת סטייה
         for (const a of A.players) {
           for (const b of B.players) {
-            // נימנע משבירת must-with (פשוט: לא מחליפים שחקן שיש לו mustWith בתוך קבוצתו)
+            // לא לשבור "חייב־עם" — אם יש לו בן/בת־זוג בקבוצה שלו, לא מזיזים לבד
             const inA = new Set(A.players.map((p) => p.name));
             const inB = new Set(B.players.map((p) => p.name));
             if (a.mustWith?.some((m) => inA.has(m))) continue;
             if (b.mustWith?.some((m) => inB.has(m))) continue;
-            // כיבוד not-with לאחר ההחלפה
-            const aInBconflict = B.players.some((q) => q.id !== b.id && (a.notWith?.includes(q.name) || q.notWith?.includes(a.name)));
-            const bInAconflict = A.players.some((q) => q.id !== a.id && (b.notWith?.includes(q.name) || q.notWith?.includes(b.name)));
-            if (aInBconflict || bInAconflict) continue;
+            // כיבוד "לא־עם" אחרי ההחלפה
+            const aInBconf = B.players.some((q) => q.id !== b.id && (a.notWith?.includes(q.name) || q.notWith?.includes(a.name)));
+            const bInAconf = A.players.some((q) => q.id !== a.id && (b.notWith?.includes(q.name) || q.notWith?.includes(b.name)));
+            if (aInBconf || bInAconf) continue;
 
             const next = copy(best);
             next[i].players = [...A.players.filter((p) => p.id !== a.id), b].sort(byRatingDesc);
             next[j].players = [...B.players.filter((p) => p.id !== b.id), a].sort(byRatingDesc);
-
             const s = score(next);
             if (
               s.maxDev < bestS.maxDev - 1e-6 ||
@@ -281,18 +293,13 @@ function varianceTighten(teams, tries = 2) {
 
 function buildBalancedTeams(players, teamsCount) {
   const { teams, targets } = initialAssign(players, teamsCount);
-
-  // 1) איזון קשיח של גדלים עד הפרש ≤ 1
-  strictSizeRebalance(teams, targets);
-
-  // 2) צמצום פערי ממוצעים (ללא שינוי גדלים)
-  const tightened = varianceTighten(teams, 2);
-
+  strictSizeRebalance(teams, targets);          // הבטחת ±1
+  const tightened = varianceTighten(teams, 2);  // ליטוש ממוצעים
   tightened.forEach((t) => t.players.sort(byRatingDesc));
   return tightened.map((t, i) => ({ id: `team-${i + 1}`, name: `קבוצה ${i + 1}`, players: t.players }));
 }
 
-/* =================== Rounds store (Admin) =================== */
+/* ============== Rounds store (Admin) ============== */
 function saveRoundToStore({ teams, teamsCount, playersCount }) {
   const entry = {
     id: Date.now().toString(),
@@ -301,7 +308,8 @@ function saveRoundToStore({ teams, teamsCount, playersCount }) {
     playersCount,
     teams,
     status: "draft",
-    results: teams.map(() => ({ outcome: "NA", goals: {} })),
+    // שים לב: במסך מנהל ננהל games מרובים לכל קבוצה
+    results: teams.map(() => ({ games: [] })), 
   };
   let store = [];
   try { store = JSON.parse(localStorage.getItem(LS.ROUNDS) || "[]"); } catch {}
@@ -310,7 +318,7 @@ function saveRoundToStore({ teams, teamsCount, playersCount }) {
   return entry.id;
 }
 
-/* =================== Teams Page =================== */
+/* ============== Teams Page ============== */
 export default function TeamsPage() {
   const [players, setPlayers] = useState([]);
   const [teamsCount, setTeamsCount] = useState(4);
@@ -321,11 +329,10 @@ export default function TeamsPage() {
 
   useEffect(() => {
     (async () => {
-      const ui =
-        JSON.parse(localStorage.getItem(LS.UI) || "null") || {
-          hideRatingsInCards: false,
-          teamsCount: 4,
-        };
+      const ui = JSON.parse(localStorage.getItem(LS.UI) || "null") || {
+        hideRatingsInCards: false,
+        teamsCount: 4,
+      };
       setHideRatingsInCards(!!ui.hideRatingsInCards);
       setTeamsCount(ui.teamsCount || 4);
 
@@ -349,6 +356,7 @@ export default function TeamsPage() {
   const activeCount = players.length;
   const targets = useMemo(() => sizeTargets(activeCount, teamsCount), [activeCount, teamsCount]);
 
+  // הערות מוצגות רק אחרי גרירה
   const warnings = useMemo(() => {
     if (!userDraggedOnce) return [];
     const alerts = new Set();
@@ -377,7 +385,7 @@ export default function TeamsPage() {
   function saveRound() {
     localStorage.setItem(LS.DRAFT, JSON.stringify({ savedAt: new Date().toISOString(), teamsCount, teams }));
     saveRoundToStore({ teams, teamsCount, playersCount: players.length });
-    alert("המחזור נשמר. עבור למסך 'מנהל' → 'פתח מחזור' כדי לעדכן תוצאות וכובשים.");
+    alert("המחזור נשמר. עבור למסך 'מנהל' → 'פתח מחזור' כדי לעדכן תוצאות וכובשים (כולל כמה משחקים לכל קבוצה).");
   }
   function onToggleHide() {
     const next = !hideRatingsInCards;
@@ -509,8 +517,6 @@ export default function TeamsPage() {
             .results-stack{display:flex;flex-direction:column;gap:4px;margin-top:6px}
             .rline{display:grid;grid-template-columns:64px 1fr;align-items:center;gap:6px}
             .gline{display:grid;grid-template-columns:repeat(12,14px);gap:5px}
-
-            /* הדפסה: רק מה שבתוך .print-root יוצג */
             @media print{
               body{background:#fff !important}
               *{ -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -585,8 +591,8 @@ export default function TeamsPage() {
                       draggable
                       onDragStart={() => dragFromTeam(ti, pi)}
                       onDragEnd={endDrag}
-                      style={{ display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,padding:"6px 8px",
-                               borderRadius:8, margin:"4px 0", background:"rgba(255,255,255,.03)" }}
+                      title="גרור לקבוצה אחרת או חזרה לטבלה"
+                      style={{ display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,padding:"6px 8px",borderRadius:8,margin:"4px 0",background:"rgba(255,255,255,.03)" }}
                     >
                       <div style={{ display:"flex",alignItems:"center",gap:8 }}>
                         <span>{p.name}</span>
