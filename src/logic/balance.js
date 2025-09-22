@@ -39,7 +39,7 @@ export function distributeBalanced(players, teamCount) {
     i = (i + dir + teamCount) % teamCount;
   }
 
-  // תיקון קצה אם נדרש
+  // תיקון קצה: מעבירים עודפים לחוסרים
   const over = [], under = [];
   teams.forEach((t, idx) => {
     while (t.players.length > maxSize) over.push(idx);
