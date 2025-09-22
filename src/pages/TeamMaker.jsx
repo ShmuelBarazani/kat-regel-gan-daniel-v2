@@ -2,47 +2,71 @@
 import React, { useMemo, useState, useCallback } from "react";
 import PrintView from "../components/PrintView";
 import { calcMinMaxSizes, canMovePlayer, distributeBalanced } from "../logic/balance";
-import playersData from "../../data/players.json"; // טעינה אוטומטית של השחקנים
 
-export default function TeamMaker({ players = playersData, initialTeamsCount = 4 }) {
+export default function TeamMaker({ players = [], initialTeamsCount = 4 }) {
   const [teamCount, setTeamCount] = useState(initialTeamsCount);
   const [teams, setTeams] = useState(
-    Array.from({ length: initialTeamsCount }, (_, i) => ({ name: `קבוצה ${i + 1}`, players: [] }))
+    Array.from({ length: initialTeamsCount }, (_, i) => ({
+      name: `קבוצה ${i + 1}`,
+      players: []
+    }))
   );
   const [showPrint, setShowPrint] = useState(false);
 
-  const playingPlayers = useMemo(() => players.filter(p => p.playing !== false), [players]);
+  const playingPlayers = useMemo(() => players.filter(p => p.playing), [players]);
   const totalPlaying = playingPlayers.length;
 
   const makeRound = useCallback(() => {
-    setTeams(distributeBalanced(playingPlayers, teamCount));
+    const next = distributeBalanced(playingPlayers, teamCount);
+    setTeams(next);
   }, [playingPlayers, teamCount]);
+
+  const movePlayer = useCallback(
+    (player, fromIdx, toIdx) => {
+      if (fromIdx === toIdx) return;
+      const next = teams.map(t => ({ ...t, players: [...t.players] }));
+
+      const fromSize = fromIdx >= 0 ? next[fromIdx].players.length : 0;
+      const toSize = next[toIdx].players.length;
+
+      if (fromIdx >= 0) {
+        if (!canMovePlayer({ fromSize, toSize, totalPlaying, teamCount })) {
+          alert("לא ניתן להעביר — פער גדלים בין קבוצות חייב להיות עד ±1.");
+          return;
+        }
+        next[fromIdx].players = next[fromIdx].players.filter(p => p.id !== player.id);
+        next[toIdx].players.push(player);
+      } else {
+        // גרירה מהטבלה (הוספה חדשה)
+        const { maxSize } = calcMinMaxSizes(totalPlaying + 1, teamCount);
+        if (toSize + 1 > maxSize) {
+          alert("הקבוצה מלאה ביחס לאיזון המותר.");
+          return;
+        }
+        next[toIdx].players.push(player);
+      }
+      setTeams(next);
+    },
+    [teams, totalPlaying, teamCount]
+  );
+
+  const removeFromTeam = useCallback(
+    (player, fromIdx) => {
+      const { minSize } = calcMinMaxSizes(totalPlaying, teamCount);
+      if (teams[fromIdx].players.length - 1 < minSize) {
+        alert("לא ניתן להסיר — תשבור את האיזון (מתחת למינימום).");
+        return;
+      }
+      const next = teams.map(t => ({ ...t, players: [...t.players] }));
+      next[fromIdx].players = next[fromIdx].players.filter(p => p.id !== player.id);
+      setTeams(next);
+    },
+    [teams, totalPlaying, teamCount]
+  );
 
   const onDrop = (e, toIdx) => {
     const payload = JSON.parse(e.dataTransfer.getData("application/json"));
-    const player = payload.player;
-    const fromIdx = payload.fromIdx;
-
-    const next = teams.map(t => ({ ...t, players: [...t.players] }));
-    const fromSize = fromIdx >= 0 ? next[fromIdx].players.length : 0;
-    const toSize = next[toIdx].players.length;
-
-    if (fromIdx >= 0) {
-      if (!canMovePlayer({ fromSize, toSize, totalPlaying, teamCount })) {
-        alert("פער גדול מדי בין הקבוצות (חייב להיות עד ±1)");
-        return;
-      }
-      next[fromIdx].players = next[fromIdx].players.filter(p => p.id !== player.id);
-      next[toIdx].players.push(player);
-    } else {
-      const { maxSize } = calcMinMaxSizes(totalPlaying + 1, teamCount);
-      if (toSize + 1 > maxSize) {
-        alert("הקבוצה הזו כבר מלאה ביחס לאיזון המותר.");
-        return;
-      }
-      next[toIdx].players.push(player);
-    }
-    setTeams(next);
+    movePlayer(payload.player, payload.fromIdx, toIdx);
   };
 
   const TeamCard = ({ team, idx }) => {
@@ -52,7 +76,9 @@ export default function TeamMaker({ players = playersData, initialTeamsCount = 4
       <div className="team-card" onDragOver={e => e.preventDefault()} onDrop={e => onDrop(e, idx)}>
         <div className="team-head">
           <span className="team-title">קבוצה {idx + 1}</span>
-          <span className="team-meta">{avg} ממוצע | {sum.toFixed(0)} סך | {team.players.length} שחקנים</span>
+          <span className="team-meta">
+            {avg} ממוצע | {sum.toFixed(0)} סך | {team.players.length} שחקנים
+          </span>
         </div>
         <div className="team-body">
           {team.players.map(p => (
@@ -60,10 +86,20 @@ export default function TeamMaker({ players = playersData, initialTeamsCount = 4
               key={p.id ?? p.name}
               className="pill"
               draggable
-              onDragStart={e => e.dataTransfer.setData("application/json", JSON.stringify({ player: p, fromIdx: idx }))}
+              onDragStart={e =>
+                e.dataTransfer.setData(
+                  "application/json",
+                  JSON.stringify({ player: p, fromIdx: idx })
+                )
+              }
             >
               <span className="name">{p.name}</span>
-              <span className="meta">{p.pos} · {p.rating ?? "-"}</span>
+              <span className="meta">
+                {p.pos} · {p.rating ?? "-"}
+              </span>
+              <button className="remove" onClick={() => removeFromTeam(p, idx)}>
+                הסר
+              </button>
             </div>
           ))}
         </div>
@@ -75,7 +111,10 @@ export default function TeamMaker({ players = playersData, initialTeamsCount = 4
     <div className="page" style={{ direction: "rtl" }}>
       <div className="toolbar">
         <div className="left">
-          <button className="primary" onClick={makeRound}>עשה כוחות</button>
+          {/* 🔹 שינוי שם הכפתור */}
+          <button className="primary" onClick={makeRound}>
+            עשה כוחות
+          </button>
           <label style={{ marginInlineStart: 12 }}>
             מס' קבוצות{" "}
             <select
@@ -83,20 +122,33 @@ export default function TeamMaker({ players = playersData, initialTeamsCount = 4
               onChange={e => {
                 const n = Number(e.target.value);
                 setTeamCount(n);
-                setTeams(Array.from({ length: n }, (_, i) => ({ name: `קבוצה ${i + 1}`, players: [] })));
+                setTeams(
+                  Array.from({ length: n }, (_, i) => ({
+                    name: `קבוצה ${i + 1}`,
+                    players: []
+                  }))
+                );
               }}
             >
-              {[2,3,4,5,6].map(n => <option key={n} value={n}>{n}</option>)}
+              {[2, 3, 4, 5, 6].map(n => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
             </select>
           </label>
         </div>
         <div className="right">
-          <button className="ghost" onClick={() => setShowPrint(true)}>PRINT PREVIEW</button>
+          <button className="ghost" onClick={() => setShowPrint(true)}>
+            PRINT PREVIEW
+          </button>
         </div>
       </div>
 
       <div className="teams-grid">
-        {teams.map((t, i) => <TeamCard key={i} team={t} idx={i} />)}
+        {teams.map((t, i) => (
+          <TeamCard key={i} team={t} idx={i} />
+        ))}
       </div>
 
       <div className="players-list">
@@ -108,7 +160,12 @@ export default function TeamMaker({ players = playersData, initialTeamsCount = 4
               key={p.id ?? p.name}
               className="row"
               draggable
-              onDragStart={e => e.dataTransfer.setData("application/json", JSON.stringify({ player: p, fromIdx: -1 }))}
+              onDragStart={e =>
+                e.dataTransfer.setData(
+                  "application/json",
+                  JSON.stringify({ player: p, fromIdx: -1 })
+                )
+              }
             >
               <div className="cell">✓</div>
               <div className="cell">{p.name}</div>
