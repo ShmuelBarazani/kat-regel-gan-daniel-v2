@@ -1,57 +1,72 @@
 // src/logic/balance.js
-export function calcMinMaxSizes(totalPlaying, teamCount) {
-  const minSize = Math.floor((totalPlaying || 0) / teamCount);
-  const maxSize = Math.ceil((totalPlaying || 0) / teamCount);
-  return { minSize, maxSize };
-}
 
-export function canMovePlayer({ fromSize, toSize, totalPlaying, teamCount }) {
-  const { minSize, maxSize } = calcMinMaxSizes(totalPlaying, teamCount);
-  const afterFrom = fromSize - 1;
-  const afterTo = toSize + 1;
-  return (
-    afterFrom >= minSize &&
-    afterFrom <= maxSize &&
-    afterTo >= minSize &&
-    afterTo <= maxSize
-  );
-}
-
-export function distributeBalanced(players, teamCount) {
-  const sorted = [...players].sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
-  const teams = Array.from({ length: teamCount }, (_, i) => ({
-    name: `קבוצה ${i + 1}`,
-    players: [],
-  }));
-  const totalPlaying = players.length;
-  const { minSize, maxSize } = calcMinMaxSizes(totalPlaying, teamCount);
-
-  let dir = 1, i = 0;
-  for (const p of sorted) {
-    let spins = 0;
-    while (spins < teamCount && teams[i].players.length >= maxSize) {
-      i = (i + dir + teamCount) % teamCount;
-      spins++;
-    }
-    teams[i].players.push(p);
-    if (i === teamCount - 1) dir = -1;
-    else if (i === 0) dir = 1;
-    i = (i + dir + teamCount) % teamCount;
-  }
-
-  // תיקון קצה: מעבירים עודפים לחוסרים
-  const over = [], under = [];
-  teams.forEach((t, idx) => {
-    while (t.players.length > maxSize) over.push(idx);
-    while (t.players.length < minSize) under.push(idx);
+/**
+ * חשב סטטיסטיקות לכל קבוצה.
+ * @param {Array<{id:string, name:string, playerIds:string[]}>} teams
+ * @param {Array<{id:string, rating:number}>} players
+ */
+export function computeTeamStats(teams, players) {
+  const byId = new Map(players.map((p) => [p.id, p]));
+  return teams.map((t) => {
+    const ps = (t.playerIds ?? []).map((pid) => byId.get(pid)).filter(Boolean);
+    const count = ps.length;
+    const sum = ps.reduce((acc, p) => acc + (Number(p.rating) || 0), 0);
+    const avg = count ? +(sum / count).toFixed(2) : 0;
+    return { id: t.id, name: t.name, count, sum, avg };
   });
-  for (const o of over) {
-    for (const u of under) {
-      if (teams[o].players.length <= maxSize) break;
-      if (teams[u].players.length >= minSize) continue;
-      const moved = teams[o].players.pop();
-      teams[u].players.push(moved);
-    }
+}
+
+/**
+ * בדוק האם כל הפערים בין גדלי הקבוצות עומדים בכלל ±1.
+ */
+export function isBalanced(teams) {
+  const sizes = teams.map((t) => (t.playerIds?.length ?? 0));
+  if (sizes.length <= 1) return true;
+  const min = Math.min(...sizes);
+  const max = Math.max(...sizes);
+  return max - min <= 1;
+}
+
+/**
+ * בדיקה האם מותר להעביר שחקן מקבוצה A לב'.
+ * @returns {boolean}
+ */
+export function canMovePlayer(teams, fromTeamId, toTeamId) {
+  if (fromTeamId === toTeamId) return true;
+  const sizes = new Map(teams.map((t) => [t.id, t.playerIds?.length ?? 0]));
+  const fromSize = sizes.get(fromTeamId) ?? 0;
+  const toSize = sizes.get(toTeamId) ?? 0;
+
+  // לאחר ההעברה: מקור קטן באחד, יעד גדול באחד
+  const newMin = Math.min(...teams.map((t) =>
+    t.id === fromTeamId ? fromSize - 1 : t.id === toTeamId ? toSize + 1 : (t.playerIds?.length ?? 0)
+  ));
+  const newMax = Math.max(...teams.map((t) =>
+    t.id === fromTeamId ? fromSize - 1 : t.id === toTeamId ? toSize + 1 : (t.playerIds?.length ?? 0)
+  ));
+
+  return newMax - newMin <= 1;
+}
+
+/**
+ * העבר שחקן בפועל בין קבוצות, תוך אכיפת כלל ±1.
+ * אם לא חוקי — מחזיר את המערך המקורי ללא שינוי.
+ */
+export function movePlayerBalanced(teams, playerId, fromTeamId, toTeamId) {
+  if (!canMovePlayer(teams, fromTeamId, toTeamId)) return teams;
+  const clone = teams.map((t) => ({ ...t, playerIds: [...(t.playerIds ?? [])] }));
+
+  const from = clone.find((t) => t.id === fromTeamId);
+  const to = clone.find((t) => t.id === toTeamId);
+  if (!to) return teams;
+
+  if (from) {
+    from.playerIds = from.playerIds.filter((id) => id !== playerId);
+  } else {
+    // ייתכן ששחקן לא היה משוייך — זה בסדר
   }
-  return teams;
+  if (!to.playerIds.includes(playerId)) {
+    to.playerIds.push(playerId);
+  }
+  return clone;
 }
