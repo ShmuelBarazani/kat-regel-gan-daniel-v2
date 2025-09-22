@@ -1,2 +1,8 @@
-# kat-regel-gan-daniel-v2
-kat-regel-gan-daniel-v2
+# קטרגל גן־דניאל ⚽
+
+אפליקציית חלוקת קבוצות, ניהול מחזור ותוצאות.
+
+## פקודות
+```bash
+npm i
+npm run dev
