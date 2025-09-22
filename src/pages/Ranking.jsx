@@ -3,7 +3,6 @@ import React from "react";
 import Leaderboards from "@/components/Leaderboards";
 
 export default function RankingPage() {
-  // TODO: בעתיד להביא נתוני דירוג מחושבים
   const dummyMonthly = [];
   const dummyYearly = [];
   const dummyMonthChamps = [];
