@@ -1,56 +1,100 @@
-// src/components/SavedCycles.jsx
-import React, { useMemo, useState } from "react";
-import { useStorage } from "../lib/storage.js";
+import React, { useRef } from "react";
 
-export default function SavedCycles(){
-  const { getCycles, removeCycles } = useStorage();
-  const [list, setList] = useState(getCycles());
-  const [sel, setSel] = useState(new Set());
+/**
+ * SavedCycles
+ * props:
+ * - cycles: Array<{ id, name, dateISO }>
+ * - onOpen: (id) => void
+ * - onDelete: (id) => void
+ * - onExportAll?: () => void
+ * - onImportFile?: (jsonString) => void
+ */
+export default function SavedCycles({
+  cycles = [],
+  onOpen,
+  onDelete,
+  onExportAll,
+  onImportFile,
+}) {
+  const fileRef = useRef(null);
 
-  const toggle = (id) => {
-    const nx = new Set(sel);
-    nx.has(id) ? nx.delete(id) : nx.add(id);
-    setSel(nx);
-  };
-
-  const allIds = useMemo(()=>list.map(x=>x.id),[list]);
-  const toggleAll = () => {
-    setSel(sel.size===list.length ? new Set() : new Set(allIds));
-  };
-
-  const removeSel = () => {
-    if (!sel.size) return;
-    if (!confirm(`למחוק ${sel.size} מחזורים?`)) return;
-    removeCycles(Array.from(sel));
-    const fresh = getCycles();
-    setList(fresh);
-    setSel(new Set());
+  const importJson = async (file) => {
+    if (!file) return;
+    const txt = await file.text();
+    onImportFile?.(txt);
+    if (fileRef.current) fileRef.current.value = "";
   };
 
   return (
-    <div className="container" dir="rtl">
-      <div className="toolbar">
-        <button className="btn" onClick={toggleAll}>סמן הכל/בטל</button>
-        <button className="btn danger" onClick={removeSel}>מחק נבחרים ({sel.size})</button>
+    <div className="rounded-2xl bg-[#0f1a2e] text-[#e8eefc] border border-[#24324a] p-4" dir="rtl">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-lg">מחזורים שמורים</h3>
+        <div className="flex items-center gap-2">
+          <button
+            className="px-3 py-1.5 rounded-xl border border-[#24324a] hover:bg-white/5"
+            onClick={onExportAll}
+            title="ייצוא כל הנתונים לקובץ JSON"
+          >
+            ייצוא JSON
+          </button>
+          <label className="px-3 py-1.5 rounded-xl border border-[#24324a] hover:bg-white/5 cursor-pointer">
+            ייבוא JSON
+            <input
+              ref={fileRef}
+              type="file"
+              accept="application/json"
+              className="hidden"
+              onChange={(e) => importJson(e.target.files?.[0])}
+            />
+          </label>
+        </div>
       </div>
 
-      <div className="table-wrapper">
-        <table className="players-table">
-          <thead>
+      <div className="overflow-auto max-h-[56vh]">
+        <table className="w-full border-separate border-spacing-y-2">
+          <thead className="sticky top-0 bg-[#0f1a2e]">
             <tr>
-              <th>בחר</th>
-              <th>תאריך</th>
-              <th>קבוצות</th>
-              <th>שחקנים פעילים</th>
+              <th className="text-right font-normal text-sm text-[#9fb0cb] pb-2">שם מחזור</th>
+              <th className="text-right font-normal text-sm text-[#9fb0cb] pb-2">תאריך</th>
+              <th className="text-right font-normal text-sm text-[#9fb0cb] pb-2">פעולות</th>
             </tr>
           </thead>
           <tbody>
-            {list.map(c=>(
+            {cycles.length === 0 && (
+              <tr>
+                <td className="text-sm text-[#9fb0cb] py-2" colSpan={3}>
+                  אין מחזורים שמורים.
+                </td>
+              </tr>
+            )}
+            {cycles.map((c) => (
               <tr key={c.id}>
-                <td><input type="checkbox" checked={sel.has(c.id)} onChange={()=>toggle(c.id)}/></td>
-                <td>{new Date(c.date).toLocaleString("he-IL")}</td>
-                <td>{c.teamCount}</td>
-                <td>{c.snapshot?.length ?? "-"}</td>
+                <td className="bg-[#0b1220] border border-[#24324a] rounded-xl px-3 py-2 text-sm">
+                  {c.name}
+                </td>
+                <td className="bg-[#0b1220] border border-[#24324a] rounded-xl px-3 py-2 text-sm">
+                  {formatDate(c.dateISO)}
+                </td>
+                <td className="bg-[#0b1220] border border-[#24324a] rounded-xl px-3 py-2 text-sm">
+                  <div className="flex items-center gap-2">
+                    <button
+                      className="px-3 py-1 rounded-lg bg-[#27c463] text-[#0b1220] hover:opacity-90"
+                      onClick={() => onOpen?.(c.id)}
+                    >
+                      פתח
+                    </button>
+                    <button
+                      className="px-3 py-1 rounded-lg border border-[#24324a] hover:bg-white/5"
+                      onClick={() => {
+                        if (confirm(`למחוק את "${c.name}"? הפעולה בלתי הפיכה.`)) {
+                          onDelete?.(c.id);
+                        }
+                      }}
+                    >
+                      מחק
+                    </button>
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -58,4 +102,20 @@ export default function SavedCycles(){
       </div>
     </div>
   );
+}
+
+function formatDate(iso) {
+  if (!iso) return "—";
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString("he-IL", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
 }
