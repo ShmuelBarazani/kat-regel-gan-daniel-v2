@@ -5,16 +5,16 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
  * props:
  * - open: boolean
  * - onClose: () => void
- * - onSubmit: (player) => void   // יקבל אובייקט שחקן מלא
- * - initial: { id?, name, pos, rating, plays, mustWith, avoidWith } (אופציונלי)
- * - existingNames: string[] (למניעת כפילות שמות, אופציונלי)
+ * - onSubmit: (player) => void
+ * - initial: { id?, name, pos, rating, plays, mustWith[], avoidWith[] }
+ * - existingPlayers: Array<{id,name}>  ← לרשימות הבחירה
  */
 export default function PlayerFormModal({
   open,
   onClose,
   onSubmit,
   initial,
-  existingNames = [],
+  existingPlayers = [],
 }) {
   const [name, setName] = useState(initial?.name ?? "");
   const [pos, setPos] = useState(initial?.pos ?? "MF");
@@ -22,8 +22,8 @@ export default function PlayerFormModal({
     typeof initial?.rating === "number" ? String(initial.rating) : "5"
   );
   const [plays, setPlays] = useState(initial?.plays ?? true);
-  const [mustWith, setMustWith] = useState((initial?.mustWith ?? []).join(", "));
-  const [avoidWith, setAvoidWith] = useState((initial?.avoidWith ?? []).join(", "));
+  const [mustWith, setMustWith] = useState(initial?.mustWith ?? []);
+  const [avoidWith, setAvoidWith] = useState(initial?.avoidWith ?? []);
   const firstInputRef = useRef(null);
 
   useEffect(() => {
@@ -31,56 +31,31 @@ export default function PlayerFormModal({
     setPos(initial?.pos ?? "MF");
     setRating(typeof initial?.rating === "number" ? String(initial.rating) : "5");
     setPlays(initial?.plays ?? true);
-    setMustWith((initial?.mustWith ?? []).join(", "));
-    setAvoidWith((initial?.avoidWith ?? []).join(", "));
+    setMustWith(initial?.mustWith ?? []);
+    setAvoidWith(initial?.avoidWith ?? []);
   }, [initial, open]);
 
   useEffect(() => {
-    if (open) {
-      setTimeout(() => firstInputRef.current?.focus(), 0);
-    }
+    if (open) setTimeout(() => firstInputRef.current?.focus(), 0);
   }, [open]);
 
-  const normalizedMust = useMemo(
-    () =>
-      mustWith
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean),
-    [mustWith]
-  );
-
-  const normalizedAvoid = useMemo(
-    () =>
-      avoidWith
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean),
-    [avoidWith]
-  );
-
   if (!open) return null;
+
+  const options = useMemo(() => {
+    const cur = (initial?.name ?? "").trim();
+    return existingPlayers
+      .map(p => p.name)
+      .filter(Boolean)
+      .filter(n => n.trim() && n.trim() !== cur)
+      .sort((a,b) => a.localeCompare(b, "he"));
+  }, [existingPlayers, initial]);
 
   const handleSubmit = (e) => {
     e?.preventDefault?.();
     const r = Number(rating);
     const trimmed = name.trim();
-
-    if (!trimmed) {
-      alert("נא להזין שם שחקן.");
-      return;
-    }
-    if (r < 0 || r > 10 || Number.isNaN(r)) {
-      alert("ציון חייב להיות בין 0 ל־10.");
-      return;
-    }
-    // מניעת כפילות שמות (אם מדובר בהוספה)
-    const isEdit = Boolean(initial?.id);
-    if (!isEdit && existingNames.map((x) => x.trim()).includes(trimmed)) {
-      if (!confirm(`קיים כבר שחקן בשם "${trimmed}". להמשיך בכל זאת?`)) {
-        return;
-      }
-    }
+    if (!trimmed) return alert("נא להזין שם שחקן.");
+    if (r < 0 || r > 10 || Number.isNaN(r)) return alert("ציון חייב להיות בין 0 ל־10.");
 
     const player = {
       id: initial?.id ?? crypto.randomUUID(),
@@ -88,40 +63,29 @@ export default function PlayerFormModal({
       pos,
       rating: r,
       plays,
-      mustWith: normalizedMust,
-      avoidWith: normalizedAvoid,
+      mustWith: mustWith,
+      avoidWith: avoidWith,
     };
     onSubmit?.(player);
   };
 
-  const handleKeyDown = (e) => {
-    if (e.key === "Escape") onClose?.();
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleSubmit(e);
+  // Multi-select helpers
+  const onMultiChange = (setter) => (e) => {
+    const selected = Array.from(e.target.selectedOptions).map(o => o.value);
+    setter(selected);
   };
 
   return (
-    <div
-      className="fixed inset-0 z-[999] flex items-center justify-center"
-      onKeyDown={handleKeyDown}
-      role="dialog"
-      aria-modal="true"
-    >
+    <div className="fixed inset-0 z-[999] flex items-center justify-center" role="dialog" aria-modal="true">
       <div className="absolute inset-0 bg-black/60" onClick={onClose} />
       <form
         onSubmit={handleSubmit}
-        className="relative w-[min(640px,96vw)] rounded-2xl bg-[#0f1a2e] text-[#e8eefc] shadow-2xl p-5 border border-[#24324a]"
+        className="relative w-[min(680px,96vw)] rounded-2xl bg-[#0f1a2e] text-[#e8eefc] shadow-2xl p-5 border border-[#24324a]"
         dir="rtl"
       >
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-xl">הוספת/עריכת שחקן</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-3 py-1 rounded-xl border border-[#24324a] hover:bg-white/5"
-            aria-label="סגור"
-          >
-            ✕
-          </button>
+          <button type="button" onClick={onClose} className="px-3 py-1 rounded-xl border border-[#24324a] hover:bg-white/5">✕</button>
         </div>
 
         <div className="grid grid-cols-12 gap-3">
@@ -132,7 +96,7 @@ export default function PlayerFormModal({
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="w-full rounded-xl bg-[#0b1220] border border-[#24324a] px-3 py-2 outline-none focus:ring-2 focus:ring-[#2575fc]"
-              placeholder="הקלד שם..."
+              placeholder=""
             />
           </div>
 
@@ -165,54 +129,30 @@ export default function PlayerFormModal({
           </div>
 
           <div className="col-span-12 flex items-center gap-2 mt-1">
-            <input
-              id="plays"
-              type="checkbox"
-              checked={plays}
-              onChange={(e) => setPlays(e.target.checked)}
-              className="h-4 w-4"
-            />
-            <label htmlFor="plays" className="text-sm select-none">
-              משחק במחזור
-            </label>
+            <input id="plays" type="checkbox" checked={plays} onChange={(e) => setPlays(e.target.checked)} className="h-4 w-4" />
+            <label htmlFor="plays" className="text-sm select-none">משחק במחזור</label>
           </div>
 
-          <div className="col-span-12">
-            <label className="block text-sm mb-1">חייב לשחק עם (שמות מופרדים בפסיק)</label>
-            <input
-              value={mustWith}
-              onChange={(e) => setMustWith(e.target.value)}
-              className="w-full rounded-xl bg-[#0b1220] border border-[#24324a] px-3 py-2 outline-none focus:ring-2 focus:ring-[#2575fc]"
-              placeholder="לדוגמה: דני, שמעון"
-            />
+          <div className="col-span-6">
+            <label className="block text-sm mb-1">חייב לשחק עם</label>
+            <select multiple size={6} value={mustWith} onChange={onMultiChange(setMustWith)}
+              className="w-full rounded-xl bg-[#0b1220] border border-[#24324a] px-3 py-2 outline-none focus:ring-2 focus:ring-[#2575fc]">
+              {options.map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
           </div>
 
-          <div className="col-span-12">
-            <label className="block text-sm mb-1">לא משחק עם (שמות מופרדים בפסיק)</label>
-            <input
-              value={avoidWith}
-              onChange={(e) => setAvoidWith(e.target.value)}
-              className="w-full rounded-xl bg-[#0b1220] border border-[#24324a] px-3 py-2 outline-none focus:ring-2 focus:ring-[#2575fc]"
-              placeholder="לדוגמה: יוסי"
-            />
+          <div className="col-span-6">
+            <label className="block text-sm mb-1">לא משחק עם</label>
+            <select multiple size={6} value={avoidWith} onChange={onMultiChange(setAvoidWith)}
+              className="w-full rounded-xl bg-[#0b1220] border border-[#24324a] px-3 py-2 outline-none focus:ring-2 focus:ring-[#2575fc]">
+              {options.map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
           </div>
         </div>
 
         <div className="mt-5 flex items-center justify-between gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 rounded-xl border border-[#24324a] hover:bg-white/5"
-          >
-            ביטול (Esc)
-          </button>
-          <button
-            type="submit"
-            className="px-4 py-2 rounded-xl bg-[#27c463] hover:opacity-90 text-[#0b1220] font-medium"
-            title="Ctrl/Cmd+Enter לשמירה מהירה"
-          >
-            שמירה (Ctrl/Cmd+Enter)
-          </button>
+          <button type="button" onClick={onClose} className="px-4 py-2 rounded-xl border border-[#24324a] hover:bg-white/5">ביטול</button>
+          <button type="submit" className="px-4 py-2 rounded-xl bg-[#27c463] hover:opacity-90 text-[#0b1220] font-medium">שמירה</button>
         </div>
       </form>
     </div>
