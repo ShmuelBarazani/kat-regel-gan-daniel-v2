@@ -13,7 +13,7 @@ const LS = {
 async function tryLoadFromStore() {
   try {
     const mod = await import("../store/playerStorage.js");import React, { useMemo, useState, useCallback } from "react";
-import PrintPreview from "../components/PrintPreview";
+import PrintView from "../components/PrintView";
 
 const rtl = { direction: "rtl" };
 
@@ -225,10 +225,7 @@ export default function Teams({
       </div>
 
       {showPrint && (
-        <PrintPreview
-          teams={teams}
-          onClose={() => setShowPrint(false)}
-        />
+         <PrintView teams={teams} onClose={() => setShowPrint(false)} />
       )}
 
       <style jsx>{`
