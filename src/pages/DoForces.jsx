@@ -1,26 +1,53 @@
 // src/pages/DoForces.jsx
 import React, { useEffect, useMemo, useState } from "react";
+import playersDataFallback from "../../data/players.json"; // נפילה קדימה לקובץ ב-data (לא public)
 
-/* ================= אחסון ומקורות נתונים ================= */
+/* =================== מפתחות אחסון =================== */
 const LS_KEYS = {
-  // טיוטות/מצב UI למסך הכוחות
   DRAFT: "teams_draft_v1",
   UI: "teams_ui_state_v1",
 };
 
-// מפתחות "מוכרים" שבהם מסך השחקנים עלול לשמור את הרשימה
-const KNOWN_PLAYER_KEYS = [
-  "players",
-  "players_v2",
-  "katregel_players",
-  "katregel.players",
-  "katregel_players_store",
-];
+/* =================== קריאת שחקנים – חכם ומאוחד =================== */
+/** ניסיון 1: טעינה מה-STORE (אם קיים, למשל Zustand / מודול ייעודי) */
+async function tryLoadFromStore() {
+  try {
+    const mod = await import("../store/playerStorage.js"); // קיים אצלך בתיקייה
+    const m = mod.default || mod;
 
-// קורא את רשימת השחקנים בדיוק כמו במסך "שחקנים":
-// 1) מנסה מפתחות מוכרים
-// 2) אם לא נמצא – סורק את כל localStorage ובוחר את המערך "הכי סביר"
-function loadPlayersRobust() {
+    // 1) Zustand-style: store.getState().players
+    if (m && typeof m.getState === "function") {
+      const st = m.getState();
+      if (st && Array.isArray(st.players) && st.players.length) {
+        return st.players;
+      }
+    }
+
+    // 2) פונקציות אפשריות
+    if (typeof m.getActivePlayers === "function") {
+      const arr = await m.getActivePlayers();
+      if (Array.isArray(arr) && arr.length) return arr;
+    }
+    if (typeof m.getPlayers === "function") {
+      const arr = await m.getPlayers();
+      if (Array.isArray(arr) && arr.length) return arr;
+    }
+    if (typeof m.loadPlayers === "function") {
+      const arr = await m.loadPlayers();
+      if (Array.isArray(arr) && arr.length) return arr;
+    }
+
+    // 3) ייצוא ישיר של מערך
+    if (Array.isArray(m.players) && m.players.length) return m.players;
+  } catch {
+    /* אין STORE מתאים – נמשיך הלאה */
+  }
+  return null;
+}
+
+/** ניסיון 2: localStorage – כולל סריקה מלאה של כל המפתחות */
+function tryLoadFromLocalStorage() {
+  const candidates = [];
   const readKey = (k) => {
     try {
       const raw = localStorage.getItem(k);
@@ -32,39 +59,53 @@ function loadPlayersRobust() {
     }
   };
 
-  let candidates = [];
-  // 1) מפתחות מוכרים
-  for (const k of KNOWN_PLAYER_KEYS) {
+  // סריקה מלאה – ניקח כל מערך שנראה כמו שחקנים
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
     const arr = readKey(k);
-    if (arr?.length) candidates.push({ key: k, arr });
+    if (!arr || !arr.length) continue;
+    candidates.push({ key: k, arr });
   }
+  if (!candidates.length) return null;
 
-  // 2) אם אין – סריקה מלאה
-  if (candidates.length === 0) {
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      const arr = readKey(k);
-      if (arr?.length) candidates.push({ key: k, arr });
-    }
-  }
-
-  if (candidates.length === 0) return [];
-
-  // ניקח את המועמד עם הכי הרבה שחקנים שממש נראים כמו שחקנים
-  const scoreArr = (arr) =>
+  const score = (arr) =>
     arr.filter(
       (p) =>
         p &&
-        (typeof p.name === "string" && p.name.trim().length > 0) &&
-        (typeof p.pos === "string" || ["GK", "DF", "MF", "FW"].includes(p.pos)) &&
-        (typeof p.rating === "number" || !isNaN(parseFloat(p.rating)))
+        typeof p.name === "string" &&
+        p.name.trim().length > 0 &&
+        (typeof p.pos === "string" ||
+          ["GK", "DF", "MF", "FW"].includes(p.pos)) &&
+        (typeof p.rating === "number" ||
+          !isNaN(parseFloat(p.rating)))
     ).length;
 
-  candidates.sort((a, b) => scoreArr(b.arr) - scoreArr(a.arr));
-  const best = candidates[0].arr;
+  candidates.sort((a, b) => score(b.arr) - score(a.arr));
+  return candidates[0].arr;
+}
 
-  // נרמול מבנה + סינון ל"משחק?"
-  return best
+/** ניסיון 3: נפילה קדימה ל-data/players.json (לא public/players.json) */
+function loadFromDataFile() {
+  return Array.isArray(playersDataFallback) ? playersDataFallback : [];
+}
+
+/** מאחד הכול + מנרמל + מסנן "משחק?" */
+async function loadPlayersUnified() {
+  // נסה STORE
+  let arr = await tryLoadFromStore();
+
+  // אם STORE לא החזיר – נסה localStorage
+  if (!arr || !arr.length) {
+    arr = tryLoadFromLocalStorage();
+  }
+
+  // אם עדיין אין – נפילה קדימה ל-data/players.json
+  if (!arr || !arr.length) {
+    arr = loadFromDataFile();
+  }
+
+  // נרמול וסינון
+  return (arr || [])
     .map((p, idx) => ({
       id: p.id ?? `${p.name || "ללא שם"}-${idx}`,
       name: (p.name || "").trim(),
@@ -75,39 +116,16 @@ function loadPlayersRobust() {
           : parseFloat(p.rating ?? 0) || 0,
       mustWith: Array.isArray(p.mustWith) ? p.mustWith : [],
       notWith: Array.isArray(p.notWith) ? p.notWith : [],
-      // אם אין שדה active – נחשב כמשחק (תואם למה שאתה רואה במסך השחקנים)
-      active: p.active !== false,
+      // אם אין שדה Active/Playing – נחשב כמשחק (תואם למסך שחקנים)
+      active:
+        p.active !== false &&
+        p.playing !== false &&
+        p.isActive !== false,
     }))
     .filter((p) => p.active);
 }
 
-function loadDraft() {
-  try {
-    return JSON.parse(localStorage.getItem(LS_KEYS.DRAFT) || "null");
-  } catch {
-    return null;
-  }
-}
-function saveDraft(d) {
-  localStorage.setItem(LS_KEYS.DRAFT, JSON.stringify(d));
-}
-function loadUi() {
-  try {
-    return (
-      JSON.parse(localStorage.getItem(LS_KEYS.UI) || "null") || {
-        hideRatingsInCards: false,
-        teamsCount: 4,
-      }
-    );
-  } catch {
-    return { hideRatingsInCards: false, teamsCount: 4 };
-  }
-}
-function saveUi(u) {
-  localStorage.setItem(LS_KEYS.UI, JSON.stringify(u));
-}
-
-/* ================= עזרי לוגיקה ================= */
+/* =================== לוגיקה של קבוצות =================== */
 function shuffle(a0) {
   const a = [...a0];
   for (let i = a.length - 1; i > 0; i--) {
@@ -189,7 +207,7 @@ function buildRandomTeams(players, teamsCount) {
   return teams;
 }
 
-/* ================= קומפוננטת המסך ================= */
+/* =================== קומפוננטת המסך =================== */
 export default function DoForces() {
   const [players, setPlayers] = useState([]);
   const [teamsCount, setTeamsCount] = useState(4);
@@ -198,23 +216,31 @@ export default function DoForces() {
   const [drag, setDrag] = useState(null);
   const [hoverWarn, setHoverWarn] = useState(null);
 
-  // טעינה ראשונית + ריענון אם localStorage מתעדכן מטאב "שחקנים"
+  // טעינה ראשונית + רענון אם localStorage/store מתעדכן
   useEffect(() => {
-    const ui = loadUi();
-    setHideRatingsInCards(!!ui.hideRatingsInCards);
-    setTeamsCount(ui.teamsCount || 4);
+    (async () => {
+      const ui = JSON.parse(localStorage.getItem(LS_KEYS.UI) || "null") || {
+        hideRatingsInCards: false,
+        teamsCount: 4,
+      };
+      setHideRatingsInCards(!!ui.hideRatingsInCards);
+      setTeamsCount(ui.teamsCount || 4);
 
-    setPlayers(loadPlayersRobust());
+      const actives = await loadPlayersUnified(); // ← כאן נפתרת בעיית ה-10
+      setPlayers(actives);
 
-    const draft = loadDraft();
-    if (draft?.teamsCount) {
-      setTeams(draft.teams || emptyTeams(draft.teamsCount));
-      setTeamsCount(draft.teamsCount);
-    } else {
-      setTeams(emptyTeams(ui.teamsCount || 4));
-    }
+      const draft = JSON.parse(localStorage.getItem(LS_KEYS.DRAFT) || "null");
+      if (draft?.teamsCount) {
+        setTeams(draft.teams || emptyTeams(draft.teamsCount));
+        setTeamsCount(draft.teamsCount);
+      } else {
+        setTeams(emptyTeams(ui.teamsCount || 4));
+      }
+    })();
 
-    const onStorage = () => setPlayers(loadPlayersRobust());
+    const onStorage = () => {
+      loadPlayersUnified().then(setPlayers);
+    };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
   }, []);
@@ -226,12 +252,14 @@ export default function DoForces() {
   );
   const mustAlerts = useMemo(() => mustWithWarnings(teams), [teams]);
 
-  /* פעולות ראשיות */
   function onMakeTeams() {
     setTeams(buildRandomTeams(players, teamsCount));
   }
   function onSaveDraft() {
-    saveDraft({ savedAt: new Date().toISOString(), teamsCount, teams });
+    localStorage.setItem(
+      LS_KEYS.DRAFT,
+      JSON.stringify({ savedAt: new Date().toISOString(), teamsCount, teams })
+    );
     alert("הטיוטה נשמרה (localStorage).");
   }
   function onClear() {
@@ -240,16 +268,22 @@ export default function DoForces() {
   function onToggleHide() {
     const next = !hideRatingsInCards;
     setHideRatingsInCards(next);
-    saveUi({ hideRatingsInCards: next, teamsCount });
+    localStorage.setItem(
+      LS_KEYS.UI,
+      JSON.stringify({ hideRatingsInCards: next, teamsCount })
+    );
   }
   function onChangeTeamsCount(n) {
     const num = Math.max(2, Math.min(8, Number(n) || 4));
     setTeamsCount(num);
-    saveUi({ hideRatingsInCards, teamsCount: num });
+    localStorage.setItem(
+      LS_KEYS.UI,
+      JSON.stringify({ hideRatingsInCards, teamsCount: num })
+    );
     setTeams(emptyTeams(num));
   }
 
-  /* Drag & Drop */
+  // D&D
   function dragFromTable(p) {
     setDrag({ from: "table", player: p });
   }
@@ -304,7 +338,6 @@ export default function DoForces() {
     setTeams(next);
   }
 
-  /* UI */
   return (
     <div className="page" style={{ padding: "16px 12px" }}>
       <header
@@ -379,7 +412,7 @@ export default function DoForces() {
           </div>
         )}
 
-        {mustAlerts.length > 0 && (
+        {useMemo(() => mustWithWarnings(teams), [teams]).length > 0 && (
           <div
             style={{
               margin: "6px 0 10px",
@@ -389,7 +422,7 @@ export default function DoForces() {
               background: "rgba(255,92,122,.08)",
             }}
           >
-            {mustAlerts.map((w, i) => (
+            {mustWithWarnings(teams).map((w, i) => (
               <div key={i}>⚠️ {w}</div>
             ))}
           </div>
