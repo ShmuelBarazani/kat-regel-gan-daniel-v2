@@ -1,54 +1,155 @@
 // src/pages/TeamMaker.jsx
-import React from "react";
+import React, { useMemo, useState } from "react";
 import { useAppStore } from "@/store/playerStorage.jsx";
+import { computeTeamStats, isBalanced } from "@/logic/balance";
 
 export default function TeamMakerPage() {
   const {
-    players, current, teamStats, teamsBalanced,
-    setTeams, movePlayer, toggleShowRatings
+    players, current, setTeams, movePlayer, toggleShowRatings, createFixturesFromTeams
   } = useAppStore();
 
-  const onDragStart = (e, playerId, fromTeamId) => {
-    e.dataTransfer.setData("playerId", playerId);
-    e.dataTransfer.setData("fromTeamId", fromTeamId || "");
+  const [teamsCount, setTeamsCount] = useState(current.teams.length || 4);
+
+  const availablePlayers = useMemo(
+    () => players.filter(p => p.plays),
+    [players]
+  );
+
+  const assignedIds = new Set(current.teams.flatMap(t => t.playerIds));
+  const unassigned = availablePlayers.filter(p => !assignedIds.has(p.id));
+
+  const totals = {
+    total: availablePlayers.length,
+    assigned: availablePlayers.length - unassigned.length,
+    free: unassigned.length,
   };
-  const onDrop = (e, toTeamId) => {
-    const playerId = e.dataTransfer.getData("playerId");
-    const fromTeamId = e.dataTransfer.getData("fromTeamId");
-    movePlayer(playerId, fromTeamId, toTeamId);
+
+  const teamStats = useMemo(() => computeTeamStats(current.teams, players), [current.teams, players]);
+  const balanced = useMemo(() => isBalanced(current.teams), [current.teams]);
+
+  // שינוי מספר קבוצות
+  const handleChangeTeamsCount = (n) => {
+    const num = Number(n);
+    setTeamsCount(num);
+    const existing = current.teams;
+    const next = Array.from({ length: num }).map((_, i) => existing[i] ?? {
+      id: crypto.randomUUID(),
+      name: `קבוצה ${i + 1}`,
+      playerIds: [],
+      showRatings: true,
+    });
+    // אם הקטנו את הכמות – נפנה שחקנים מהקבוצות שנמחקות לרשימת זמינים
+    const removed = existing.slice(num);
+    const returned = removed.flatMap(t => t.playerIds);
+    next.forEach((t, i) => { if (i >= existing.length) t.playerIds = []; });
+    // מחזירים את השחקנים לרשימת זמינים (בפועל: פשוט לא להכניסם ל-next)
+    setTeams(next);
   };
-  const allowDrop = (e) => e.preventDefault();
+
+  // הסתר/הצג ציונים לכל הקבוצות
+  const toggleAllRatings = () => {
+    const anyShown = current.teams.some(t => t.showRatings);
+    const next = current.teams.map(t => ({ ...t, showRatings: !anyShown }));
+    setTeams(next);
+  };
+
+  // עשה כוחות — חלוקה אוטומטית Greedy
+  const autoDistribute = () => {
+    const n = teamsCount;
+    if (n < 2) return;
+    const picked = availablePlayers.slice().sort((a,b) => b.rating - a.rating);
+
+    const teams = Array.from({ length: n }).map((_, i) => ({
+      id: current.teams[i]?.id ?? crypto.randomUUID(),
+      name: `קבוצה ${i + 1}`,
+      playerIds: [],
+      showRatings: current.teams[i]?.showRatings ?? true,
+    }));
+
+    const sums = Array(n).fill(0);
+    const sizes = Array(n).fill(0);
+
+    // תחילה ננקה ייעודים קיימים
+    // ואז נריץ Greedy: כל פעם נכניס את השחקן לקבוצה עם סכום נמוך יותר ובמקביל נכבד את כלל ±1
+    picked.forEach(p => {
+      // מצא את הקבוצות המועמדות — עם הגודל המינימלי (כדי לכבד ±1)
+      const minSize = Math.min(...sizes);
+      const candidates = [];
+      for (let i=0;i<n;i++) if (sizes[i] === minSize) candidates.push(i);
+      // מתוכן נבחר את זו עם סך ניקוד נמוך יותר
+      candidates.sort((i,j) => sums[i] - sums[j]);
+      const idx = candidates[0];
+
+      teams[idx].playerIds.push(p.id);
+      sizes[idx] += 1;
+      sums[idx] += Number(p.rating) || 0;
+    });
+
+    setTeams(teams);
+  };
+
+  const printView = () => window.print();
 
   return (
     <div className="p-4 space-y-4" dir="rtl">
-      <h2 className="text-2xl">עשה כוחות / מחזור</h2>
-      {!teamsBalanced && (
-        <div className="text-[#ff5c7a]">⚠️ חלוקה לא מאוזנת! הפער בין הקבוצות גדול מ־1.</div>
-      )}
+      <div className="flex flex-wrap items-center gap-2 justify-between">
+        <h2 className="text-2xl">עשה כוחות / מחזור</h2>
+        <div className="text-sm text-[#9fb0cb]">
+          שחקנים זמינים: <b>{totals.total}</b> · משובצים: <b>{totals.assigned}</b> · פנויים: <b>{totals.free}</b>
+        </div>
+      </div>
 
+      {/* סרגל פעולות */}
+      <div className="no-print flex flex-wrap items-center gap-2">
+        <label className="flex items-center gap-2">
+          <span>מס׳ קבוצות:</span>
+          <select
+            value={teamsCount}
+            onChange={(e) => handleChangeTeamsCount(e.target.value)}
+            className="rounded-lg bg-[#0b1220] border border-[#24324a] px-2 py-1"
+          >
+            {[2,3,4,5,6].map(n => <option key={n} value={n}>{n}</option>)}
+          </select>
+        </label>
+
+        <button onClick={autoDistribute} className="px-3 py-2 rounded-xl bg-[#27c463] text-[#0b1220] hover:opacity-90">
+          עשה כוחות
+        </button>
+        <button onClick={createFixturesFromTeams} className="px-3 py-2 rounded-xl bg-[#2575fc] text-white hover:opacity-90">
+          קבע מחזור
+        </button>
+        <button onClick={printView} className="px-3 py-2 rounded-xl border border-[#24324a] hover:bg-white/5">
+          תצוגת הדפסה
+        </button>
+        <button onClick={toggleAllRatings} className="px-3 py-2 rounded-xl border border-[#24324a] hover:bg-white/5">
+          {current.teams.some(t => t.showRatings) ? "הסתר ציונים" : "הצג ציונים"}
+        </button>
+        {!balanced && <span className="text-[#ff5c7a]">⚠ חלוקה לא מאוזנת (כלל ±1)</span>}
+      </div>
+
+      {/* כרטיסי קבוצות */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-        {current.teams.map((team) => {
+        {current.teams.map((team, i) => {
           const stats = teamStats.find(t => t.id === team.id);
           return (
             <div
               key={team.id}
-              className="rounded-2xl bg-[#0f1a2e] border border-[#24324a] p-3 flex flex-col"
-              onDragOver={allowDrop}
-              onDrop={(e) => onDrop(e, team.id)}
+              className="rounded-2xl bg-[#0f1a2e] border border-[#24324a] p-3 flex flex-col print-card"
+              onDragOver={(e)=>e.preventDefault()}
+              onDrop={(e) => {
+                const playerId = e.dataTransfer.getData("playerId");
+                const fromTeamId = e.dataTransfer.getData("fromTeamId");
+                movePlayer(playerId, fromTeamId, team.id);
+              }}
             >
               <div className="flex justify-between items-center mb-2">
-                <h3 className="text-lg">{team.name}</h3>
-                <button
-                  onClick={() => toggleShowRatings(team.id)}
-                  className="text-xs text-[#9fb0cb] underline"
-                >
-                  {team.showRatings ? "הסתר ציונים" : "הצג ציונים"}
-                </button>
+                <h3 className="text-lg">קבוצה {i+1}</h3>
+                <span className="text-xs text-[#9fb0cb]">
+                  שחקנים: {stats?.count ?? 0} · ממוצע: {stats?.avg ?? 0} · סך: {stats?.sum ?? 0}
+                </span>
               </div>
-              <div className="text-sm text-[#9fb0cb] mb-2">
-                שחקנים: {stats?.count ?? 0} | ממוצע: {stats?.avg ?? 0} | סך: {stats?.sum ?? 0}
-              </div>
-              <div className="flex-1 overflow-auto space-y-1">
+
+              <div className="flex-1 overflow-auto space-y-1 min-h-[120px]">
                 {team.playerIds.map(pid => {
                   const p = players.find(x => x.id === pid);
                   if (!p) return null;
@@ -56,7 +157,10 @@ export default function TeamMakerPage() {
                     <div
                       key={p.id}
                       draggable
-                      onDragStart={(e) => onDragStart(e, p.id, team.id)}
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData("playerId", p.id);
+                        e.dataTransfer.setData("fromTeamId", team.id);
+                      }}
                       className="rounded-xl bg-[#0b1220] border border-[#24324a] px-2 py-1 flex justify-between cursor-grab"
                     >
                       <span>{p.name}</span>
@@ -73,20 +177,28 @@ export default function TeamMakerPage() {
         })}
       </div>
 
+      {/* שחקנים זמינים */}
       <div className="rounded-2xl bg-[#0f1a2e] border border-[#24324a] p-3">
         <h3 className="text-lg mb-2">רשימת שחקנים זמינים</h3>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 max-h-[50vh] overflow-auto">
-          {players.filter(p => !current.teams.some(t => t.playerIds.includes(p.id)) && p.plays).map(p => (
+          {unassigned.map(p => (
             <div
               key={p.id}
               draggable
-              onDragStart={(e) => onDragStart(e, p.id, null)}
+              onDragStart={(e) => {
+                e.dataTransfer.setData("playerId", p.id);
+                e.dataTransfer.setData("fromTeamId", "");
+              }}
               className="rounded-xl bg-[#0b1220] border border-[#24324a] px-2 py-1 flex justify-between cursor-grab"
+              title={p.name}
             >
-              <span>{p.name}</span>
+              <span className="truncate">{p.name}</span>
               <span className="text-xs text-[#9fb0cb]">{p.rating}</span>
             </div>
           ))}
+          {unassigned.length === 0 && (
+            <div className="text-sm text-[#9fb0cb]">אין שחקנים זמינים.</div>
+          )}
         </div>
       </div>
     </div>
