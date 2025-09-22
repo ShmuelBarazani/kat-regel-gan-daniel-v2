@@ -1,0 +1,113 @@
+/* ✅ טבלת השחקנים */
+.table {
+  display: table;
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+  background: #0f1a2e;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.row {
+  display: table-row;
+}
+
+.cell {
+  display: table-cell;
+  padding: 8px 10px;
+  border-bottom: 1px solid #24324a;
+  vertical-align: middle;
+  text-align: center;
+  color: #e8eefc;
+}
+
+.header .cell {
+  background: #146c43;
+  font-weight: bold;
+  color: #fff;
+  text-align: center;
+}
+
+/* ✅ כפתורי פעולה */
+.actions {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+}
+
+.actions button {
+  border: none;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+button.edit {
+  background: #1a2740;
+  color: #e8eefc;
+}
+
+button.delete {
+  background: #ff5c7a;
+  color: #fff;
+}
+
+/* ✅ כרטיסי קבוצות */
+.teams-grid {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.team-card {
+  background: #0f1a2e;
+  border: 1px solid #24324a;
+  border-radius: 12px;
+  padding: 10px;
+  margin: 6px;
+  flex: 1;
+  min-width: 220px;
+}
+
+.team-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.9rem;
+  margin-bottom: 6px;
+  color: #e8eefc;
+}
+
+.team-title {
+  font-weight: bold;
+}
+
+.team-meta {
+  color: #9fb0cb;
+}
+
+.team-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pill {
+  background: #1a2740;
+  border-radius: 8px;
+  padding: 6px 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: grab;
+  color: #e8eefc;
+}
+
+.pill .remove {
+  background: transparent;
+  border: none;
+  color: #ff5c7a;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
