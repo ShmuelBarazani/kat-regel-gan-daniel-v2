@@ -1,5 +1,4 @@
 // src/pages/Teams.jsx
-// עטיפה שמנתבת תמיד למסך TeamMaker המעודכן
 import React from "react";
 import TeamMaker from "./TeamMaker";
 
