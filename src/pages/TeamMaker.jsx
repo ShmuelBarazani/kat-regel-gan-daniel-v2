@@ -37,7 +37,6 @@ export default function TeamMaker({ players = [], initialTeamsCount = 4 }) {
         next[fromIdx].players = next[fromIdx].players.filter(p => p.id !== player.id);
         next[toIdx].players.push(player);
       } else {
-        // גרירה מהטבלה (הוספה חדשה)
         const { maxSize } = calcMinMaxSizes(totalPlaying + 1, teamCount);
         if (toSize + 1 > maxSize) {
           alert("הקבוצה מלאה ביחס לאיזון המותר.");
@@ -111,7 +110,7 @@ export default function TeamMaker({ players = [], initialTeamsCount = 4 }) {
     <div className="page" style={{ direction: "rtl" }}>
       <div className="toolbar">
         <div className="left">
-          {/* 🔹 שינוי שם הכפתור */}
+          {/* כאן שיניתי את הטקסט בלבד */}
           <button className="primary" onClick={makeRound}>
             עשה כוחות
           </button>
