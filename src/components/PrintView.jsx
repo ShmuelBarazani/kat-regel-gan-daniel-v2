@@ -1,6 +1,6 @@
 // src/components/PrintView.jsx
 import React, { useEffect } from "react";
-import "../styles/print.css"; // חשוב: זה מחיל 2x2, צבעים, עמוד אחד בלבד
+import "../styles/print.css"; // חובה: מחיל 2x2, צבעים, עמוד אחד
 
 function GoalsBoxes({ count = 12 }) {
   return (
@@ -24,7 +24,6 @@ function TeamSheet({ team, index }) {
           <div className="th goals">שערים</div>
         </div>
         <div className="tbody">
-          {/* בלי שורות ריקות – רק שחקנים קיימים */}
           {team.players.map(p => (
             <div className="tr" key={p.id ?? p.name}>
               <div className="td player">{p.name}</div>
@@ -51,7 +50,7 @@ export default function PrintView({ teams, onClose }) {
   }, [onClose]);
 
   const printIt = () => window.print();
-  const four = teams.slice(0, 4); // עמוד אחד, 2x2
+  const four = teams.slice(0, 4); // עמוד אחד, 2×2
 
   return (
     <div className="print-modal">
