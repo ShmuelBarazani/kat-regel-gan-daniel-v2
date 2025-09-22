@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import playersData from "../data/players.json";
+import playersData from "../data/players.json"; // ✅ עובד אם הקובץ בתוך src/data
 
 export default function Players() {
   const [players, setPlayers] = useState([]);
