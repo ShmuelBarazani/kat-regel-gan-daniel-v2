@@ -2,8 +2,10 @@
 import React, { useMemo, useState, useCallback } from "react";
 import PrintView from "../components/PrintView";
 import { calcMinMaxSizes, canMovePlayer, distributeBalanced } from "../logic/balance";
+import playersData from "../../data/players.json"; // ✅ טעינה ישירה של רשימת השחקנים
 
-export default function TeamMaker({ players = [], initialTeamsCount = 4 }) {
+export default function TeamMaker({ initialTeamsCount = 4 }) {
+  const players = playersData; // ✅ תמיד ייקח את כל השחקנים מה-JSON
   const [teamCount, setTeamCount] = useState(initialTeamsCount);
   const [teams, setTeams] = useState(
     Array.from({ length: initialTeamsCount }, (_, i) => ({
@@ -13,7 +15,7 @@ export default function TeamMaker({ players = [], initialTeamsCount = 4 }) {
   );
   const [showPrint, setShowPrint] = useState(false);
 
-  const playingPlayers = useMemo(() => players.filter(p => p.playing), [players]);
+  const playingPlayers = useMemo(() => players.filter(p => p.playing !== false), [players]);
   const totalPlaying = playingPlayers.length;
 
   const makeRound = useCallback(() => {
@@ -110,9 +112,8 @@ export default function TeamMaker({ players = [], initialTeamsCount = 4 }) {
     <div className="page" style={{ direction: "rtl" }}>
       <div className="toolbar">
         <div className="left">
-          {/* כאן נשאר כמו בצילום שלך */}
           <button className="primary" onClick={makeRound}>
-            עשה מחזור
+            עשה כוחות
           </button>
           <label style={{ marginInlineStart: 12 }}>
             מס' קבוצות{" "}
