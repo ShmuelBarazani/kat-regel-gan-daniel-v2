@@ -110,9 +110,9 @@ export default function TeamMaker({ players = [], initialTeamsCount = 4 }) {
     <div className="page" style={{ direction: "rtl" }}>
       <div className="toolbar">
         <div className="left">
-          {/* כאן שיניתי את הטקסט בלבד */}
+          {/* כאן נשאר כמו בצילום שלך */}
           <button className="primary" onClick={makeRound}>
-            עשה כוחות
+            עשה מחזור
           </button>
           <label style={{ marginInlineStart: 12 }}>
             מס' קבוצות{" "}
