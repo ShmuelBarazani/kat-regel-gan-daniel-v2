@@ -11,28 +11,20 @@ html,body{background:var(--bg); color:var(--ink)}
 *{box-sizing:border-box}
 
 /* קונטיינר דף */
-.page{
-  max-width:1200px; margin:0 auto; padding:1rem;
-}
+.page{ max-width:1200px; margin:0 auto; padding:1rem; }
 
-/* כפתור ראשי קטן */
+/* כפתור בסיסי */
 .btn{ @apply px-3 py-2 rounded-xl border border-[#24324a] hover:bg-white/5; }
 
-/* כותרת אפליקציה */
-.app-title{
-  font-size:clamp(20px,2.4vw,28px);
-}
+/* כותרת עליונה */
+.app-title{ font-size:clamp(20px,2.4vw,28px); }
 
 /* בר עליון (טאבים) */
 .topbar{
-  position:sticky; top:0; z-index:50; backdrop-filter:saturate(1.2) blur(6px);
-  background: linear-gradient(180deg, rgba(11,18,32,.85), rgba(11,18,32,.65));
+  position:sticky; top:0; z-index:50;
+  backdrop-filter:saturate(1.2) blur(6px);
+  background:linear-gradient(180deg,rgba(11,18,32,.85),rgba(11,18,32,.65));
   border-bottom:1px solid var(--edge);
 }
-.tab{
-  @apply px-3 py-2 rounded-lg text-sm;
-  color:var(--muted);
-}
-.tab[aria-current="page"]{
-  background:#0b1424; color:var(--ink); border:1px solid var(--edge);
-}
+.tab{ @apply px-3 py-2 rounded-lg text-sm; color:var(--muted); }
+.tab[aria-current="page"]{ background:#0b1424; color:var(--ink); border:1px solid var(--edge); }
