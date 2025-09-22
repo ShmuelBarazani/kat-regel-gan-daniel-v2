@@ -1,6 +1,6 @@
 // src/pages/TeamMaker.jsx
 import React from "react";
-import { useAppStore } from "@/store/playerStorage";
+import { useAppStore } from "@/store/playerStorage.jsx";
 
 export default function TeamMakerPage() {
   const {
@@ -27,7 +27,7 @@ export default function TeamMakerPage() {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-        {current.teams.map((team, i) => {
+        {current.teams.map((team) => {
           const stats = teamStats.find(t => t.id === team.id);
           return (
             <div
