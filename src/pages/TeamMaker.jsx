@@ -1,80 +1,90 @@
-import React, { useState, useEffect, useCallback } from "react";
-import playersData from "../data/players.json";
+// src/pages/TeamMaker.jsx
+import React from "react";
+import { useAppStore } from "@/store/playerStorage";
 
-export default function TeamMaker() {
-  const [players, setPlayers] = useState([]);
-  const [teams, setTeams] = useState([[], [], [], []]);
+export default function TeamMakerPage() {
+  const {
+    players, current, teamStats, teamsBalanced,
+    setTeams, movePlayer, toggleShowRatings
+  } = useAppStore();
 
-  useEffect(() => {
-    setPlayers(playersData);
-  }, []);
-
-  // פונקציה ליצירת מחזור חדש (בינתיים דמיונית – תשלים אלגוריתם חלוקה מאוחר יותר)
-  const makeRound = useCallback(() => {
-    const next = [...teams];
-    setTeams(next);
-  }, [teams]);
+  const onDragStart = (e, playerId, fromTeamId) => {
+    e.dataTransfer.setData("playerId", playerId);
+    e.dataTransfer.setData("fromTeamId", fromTeamId || "");
+  };
+  const onDrop = (e, toTeamId) => {
+    const playerId = e.dataTransfer.getData("playerId");
+    const fromTeamId = e.dataTransfer.getData("fromTeamId");
+    movePlayer(playerId, fromTeamId, toTeamId);
+  };
+  const allowDrop = (e) => e.preventDefault();
 
   return (
-    <div className="teams-screen">
-      <div className="toolbar">
-        <div className="left">
-          <label>
-            מס׳ קבוצות{" "}
-            <select defaultValue={4}>
-              <option value={2}>2</option>
-              <option value={3}>3</option>
-              <option value={4}>4</option>
-            </select>
-          </label>
-          <button className="primary" onClick={makeRound}>
-            עשה מחזור
-          </button>
-        </div>
-        <div className="right">
-          <button className="ghost">PRINT PREVIEW</button>
-        </div>
-      </div>
+    <div className="p-4 space-y-4" dir="rtl">
+      <h2 className="text-2xl">עשה כוחות / מחזור</h2>
+      {!teamsBalanced && (
+        <div className="text-[#ff5c7a]">⚠️ חלוקה לא מאוזנת! הפער בין הקבוצות גדול מ־1.</div>
+      )}
 
-      <div className="teams-grid">
-        {teams.map((t, i) => (
-          <div key={i} className="team-card">
-            <div className="team-head">
-              <span className="team-title">קבוצה {i + 1}</span>
-              <span className="team-meta">
-                {t.length} שחקנים | ממוצע 0.0 | סך 0
-              </span>
-            </div>
-            <div className="team-body">
-              {t.map((p, idx) => (
-                <div key={idx} className="pill">
-                  {p.name} <span>{p.rating}</span>
-                  <button className="remove">הסר</button>
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="players-list">
-        <h3>רשימת השחקנים</h3>
-        <p className="muted">גרור שחקן לכרטיס קבוצה, או חזרה לכאן להסרה.</p>
-        <div className="table">
-          <div className="row header">
-            <div className="cell">משחק?</div>
-            <div className="cell">שם</div>
-            <div className="cell">עמדה</div>
-            <div className="cell">ציון</div>
-          </div>
-          {players.map((p, idx) => (
-            <div className="row" key={idx}>
-              <div className="cell">
-                <input type="checkbox" defaultChecked />
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+        {current.teams.map((team, i) => {
+          const stats = teamStats.find(t => t.id === team.id);
+          return (
+            <div
+              key={team.id}
+              className="rounded-2xl bg-[#0f1a2e] border border-[#24324a] p-3 flex flex-col"
+              onDragOver={allowDrop}
+              onDrop={(e) => onDrop(e, team.id)}
+            >
+              <div className="flex justify-between items-center mb-2">
+                <h3 className="text-lg">{team.name}</h3>
+                <button
+                  onClick={() => toggleShowRatings(team.id)}
+                  className="text-xs text-[#9fb0cb] underline"
+                >
+                  {team.showRatings ? "הסתר ציונים" : "הצג ציונים"}
+                </button>
               </div>
-              <div className="cell">{p.name}</div>
-              <div className="cell">{p.pos}</div>
-              <div className="cell">{p.rating}</div>
+              <div className="text-sm text-[#9fb0cb] mb-2">
+                שחקנים: {stats?.count ?? 0} | ממוצע: {stats?.avg ?? 0} | סך: {stats?.sum ?? 0}
+              </div>
+              <div className="flex-1 overflow-auto space-y-1">
+                {team.playerIds.map(pid => {
+                  const p = players.find(x => x.id === pid);
+                  if (!p) return null;
+                  return (
+                    <div
+                      key={p.id}
+                      draggable
+                      onDragStart={(e) => onDragStart(e, p.id, team.id)}
+                      className="rounded-xl bg-[#0b1220] border border-[#24324a] px-2 py-1 flex justify-between cursor-grab"
+                    >
+                      <span>{p.name}</span>
+                      {team.showRatings && <span className="text-xs text-[#9fb0cb]">{p.rating}</span>}
+                    </div>
+                  );
+                })}
+                {team.playerIds.length === 0 && (
+                  <div className="text-xs text-[#9fb0cb]">אין שחקנים.</div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="rounded-2xl bg-[#0f1a2e] border border-[#24324a] p-3">
+        <h3 className="text-lg mb-2">רשימת שחקנים זמינים</h3>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 max-h-[50vh] overflow-auto">
+          {players.filter(p => !current.teams.some(t => t.playerIds.includes(p.id)) && p.plays).map(p => (
+            <div
+              key={p.id}
+              draggable
+              onDragStart={(e) => onDragStart(e, p.id, null)}
+              className="rounded-xl bg-[#0b1220] border border-[#24324a] px-2 py-1 flex justify-between cursor-grab"
+            >
+              <span>{p.name}</span>
+              <span className="text-xs text-[#9fb0cb]">{p.rating}</span>
             </div>
           ))}
         </div>
