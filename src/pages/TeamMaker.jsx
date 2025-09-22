@@ -2,15 +2,16 @@
 import React, { useMemo, useState, useCallback } from "react";
 import PrintView from "../components/PrintView";
 import { calcMinMaxSizes, canMovePlayer, distributeBalanced } from "../logic/balance";
+import playersData from "../../data/players.json"; // טעינת ברירת מחדל
 
-export default function TeamMaker({ players = [], initialTeamsCount = 4 }) {
+export default function TeamMaker({ players = playersData, initialTeamsCount = 4 }) {
   const [teamCount, setTeamCount] = useState(initialTeamsCount);
   const [teams, setTeams] = useState(
     Array.from({ length: initialTeamsCount }, (_, i) => ({ name: `קבוצה ${i + 1}`, players: [] }))
   );
   const [showPrint, setShowPrint] = useState(false);
 
-  const playingPlayers = useMemo(() => players.filter(p => p.playing), [players]);
+  const playingPlayers = useMemo(() => players.filter(p => p.playing !== false), [players]);
   const totalPlaying = playingPlayers.length;
 
   const makeRound = useCallback(() => {
@@ -33,7 +34,6 @@ export default function TeamMaker({ players = [], initialTeamsCount = 4 }) {
         next[fromIdx].players = next[fromIdx].players.filter(p => p.id !== player.id);
         next[toIdx].players.push(player);
       } else {
-        // הוספה חדשה מהטבלה
         const { maxSize } = calcMinMaxSizes(totalPlaying + 1, teamCount);
         if (toSize + 1 > maxSize) {
           alert("הקבוצה מלאה ביחס לאיזון המותר.");
@@ -98,7 +98,7 @@ export default function TeamMaker({ players = [], initialTeamsCount = 4 }) {
     <div className="page" style={{ direction: "rtl" }}>
       <div className="toolbar">
         <div className="left">
-          <button className="primary" onClick={makeRound}>עשה מחזור</button>
+          <button className="primary" onClick={makeRound}>עשה כוחות</button>
           <label style={{ marginInlineStart: 12 }}>
             מס' קבוצות{" "}
             <select
@@ -115,7 +115,6 @@ export default function TeamMaker({ players = [], initialTeamsCount = 4 }) {
         </div>
         <div className="right">
           <button className="ghost" onClick={() => setShowPrint(true)}>PRINT PREVIEW</button>
-          {/* כפתור איפוס — הוסר בכוונה */}
         </div>
       </div>
 
@@ -146,30 +145,6 @@ export default function TeamMaker({ players = [], initialTeamsCount = 4 }) {
       </div>
 
       {showPrint && <PrintView teams={teams} onClose={() => setShowPrint(false)} />}
-
-      {/* סטייל בסיסי לכרטיסי הקבוצות/טבלה — אם יש לך styles.css משלך, זה יכול להישען עליו */}
-      <style>{`
-        :root{ --bg:#0b1220; --card:#0f1a2e; --ink:#e8eefc; --muted:#9fb0cb; --edge:#24324a; }
-        .page { padding: 16px 12px; color: var(--ink); }
-        .toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px; }
-        .primary { background:#2e7d32; color:#e8eefc; border:none; padding:10px 14px; border-radius:12px; cursor:pointer; }
-        .ghost { background:transparent; border:1px solid #345; color:#e8eefc; padding:8px 12px; border-radius:12px; }
-        .teams-grid { display:grid; grid-template-columns: repeat(4,1fr); gap:14px; }
-        .team-card { background:var(--card); border:1px solid var(--edge); border-radius:16px; padding:10px; min-height:180px; }
-        .team-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
-        .team-title { font-weight:600; }
-        .team-meta { color:var(--muted); font-size:12px; }
-        .pill { display:flex; align-items:center; justify-content:space-between; gap:8px; background:#14243c; border:1px solid #22324a; padding:6px 8px; border-radius:12px; margin-bottom:6px; }
-        .pill .name { font-weight:500; }
-        .pill .meta { color:var(--muted); font-size:12px; }
-        .pill .remove { background:#2a3448; border:0; color:#e8eefc; border-radius:10px; padding:4px 8px; cursor:pointer; }
-        .players-list { margin-top:16px; }
-        .players-list .muted { color:var(--muted); margin:0 0 8px; }
-        .table { max-height:320px; overflow:auto; border:1px solid var(--edge); border-radius:12px; }
-        .row { display:grid; grid-template-columns: 60px 1fr 100px 80px; gap:8px; padding:8px 10px; border-bottom:1px solid #1c2940; }
-        .cell { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-        @media (max-width: 1100px) { .teams-grid { grid-template-columns: repeat(2,1fr); } }
-      `}</style>
     </div>
   );
 }
