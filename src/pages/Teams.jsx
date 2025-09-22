@@ -1,4 +1,6 @@
 // src/pages/Teams.jsx
+// עטיפה שמרנדרת את TeamMaker — כך שגם אם ניווט פונה ל-"Teams" נטען את המסך הנכון
+
 import React from "react";
 import TeamMaker from "./TeamMaker";
 
