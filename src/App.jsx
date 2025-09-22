@@ -2,15 +2,13 @@
 import React from "react";
 import { BrowserRouter, Routes, Route, Link, useLocation } from "react-router-dom";
 
-// מסכים (ודא שקבצים אלו קיימים במסלול הזה בדיוק)
 import Players from "./pages/Players.jsx";
-import DoForces from "./pages/DoForces.jsx";   // ← מסך עשה כוחות / מחזור
+import DoForces from "./pages/DoForces.jsx";
 import Ranking from "./pages/Ranking.jsx";
 import Admin from "./pages/Admin.jsx";
 
-import "./styles.css";
+// אין import "./styles.css" כאן!
 
-// רכיב טאבים עליון
 function Tabs() {
   const { pathname } = useLocation();
   const Tab = ({ to, children }) => (
@@ -18,7 +16,6 @@ function Tabs() {
       {children}
     </Link>
   );
-
   return (
     <nav className="tabs" style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
       <Tab to="/players">שחקנים</Tab>
@@ -40,10 +37,9 @@ export default function App() {
 
         <main>
           <Routes>
-            {/* ברירת מחדל: נוחתים למסך השחקנים */}
             <Route path="/" element={<Players />} />
             <Route path="/players" element={<Players />} />
-            <Route path="/forces" element={<DoForces />} />   {/* ← חשוב: מפנה ל-DoForces.jsx */}
+            <Route path="/forces" element={<DoForces />} />
             <Route path="/ranking" element={<Ranking />} />
             <Route path="/admin" element={<Admin />} />
           </Routes>
