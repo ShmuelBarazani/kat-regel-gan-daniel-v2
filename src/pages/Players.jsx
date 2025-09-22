@@ -1,6 +1,6 @@
 // src/pages/Players.jsx
 import React, { useState } from "react";
-import { useAppStore } from "@/store/playerStorage";
+import { useAppStore } from "@/store/playerStorage.jsx";
 import PlayerFormModal from "@/components/PlayerFormModal";
 
 export default function PlayersPage() {
@@ -59,7 +59,7 @@ export default function PlayersPage() {
                 <td className="px-2 py-1 text-sm text-[#9fb0cb]">{p.avoidWith?.join(", ")}</td>
                 <td className="px-2 py-1">
                   <div className="flex gap-2">
-                    <button onClick={() => openEdit(p)} className="px-2 py-1 text-sm rounded-lg border border-[#24324a] hover:bg-white/5">ערוך</button>
+                    <button onClick={() => openEdit(p)} className="px-2 py-1 text-sm rounded-lg border border-[#24324a] hover:bg:white/5">ערוך</button>
                     <button
                       onClick={() => { if(confirm(`למחוק את ${p.name}?`)) deletePlayer(p.id); }}
                       className="px-2 py-1 text-sm rounded-lg border border-[#ff5c7a] text-[#ff5c7a] hover:bg-[#ff5c7a]/10"
