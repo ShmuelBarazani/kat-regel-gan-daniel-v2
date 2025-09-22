@@ -1,4 +1,4 @@
-// src/store/playerStorage.js
+// src/store/playerStorage.jsx
 import React, { createContext, useCallback, useContext, useMemo, useReducer } from "react";
 import {
   getPlayers, savePlayers,
@@ -47,7 +47,6 @@ function reducer(state, action) {
     }
     case "players/delete": {
       const players = savePlayers(state.players.filter(p => p.id !== action.id));
-      // גם להסיר מהקבוצות אם היה משובץ
       const newTeams = state.current.teams.map(t => ({ ...t, playerIds: t.playerIds.filter(pid => pid !== action.id) }));
       const current = saveCurrentState({ ...state.current, teams: newTeams });
       return { ...state, players, current };
@@ -69,7 +68,7 @@ function reducer(state, action) {
     }
     case "teams/movePlayer": {
       const teams = movePlayerBalanced(state.current.teams, action.playerId, action.fromTeamId, action.toTeamId);
-      if (teams === state.current.teams) return state; // לא חוקי — אין שינוי
+      if (teams === state.current.teams) return state;
       const current = saveCurrentState({ ...state.current, teams });
       return { ...state, current };
     }
@@ -182,7 +181,6 @@ export function AppProvider({ children }) {
   }, []);
 
   const createFixturesFromTeams = useCallback(() => {
-    // הנחה: 4 קבוצות => 2 משחקים: (1-2), (3-4)
     const teams = state.current.teams;
     if (teams.length < 2) {
       dispatch({ type: "fixtures/set", fixtures: [] });
@@ -224,7 +222,6 @@ export function AppProvider({ children }) {
   const exportAll = useCallback(() => exportAllStorage(), []);
   const importAll = useCallback((jsonString) => {
     importAllStorage(jsonString);
-    // רענון מלא של הסטור
     const players = getPlayers();
     const current = getCurrentState();
     const cycles = getCycles();
@@ -288,7 +285,6 @@ export function useAppStore() {
   return ctx;
 }
 
-// ----- helpers -----
 function sortKey(p, by) {
   switch (by) {
     case "plays": return p.plays ? 1 : 0;
