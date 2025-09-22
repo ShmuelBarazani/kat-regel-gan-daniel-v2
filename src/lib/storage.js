@@ -1,202 +1,203 @@
 // src/lib/storage.js
-// Storage אחיד לכל המסכים + Bootstrap אוטומטי מ-public/players.json + תאימות שדות (r/rating, selected/active)
+import playersSeed from "@/data/players.json";
 
-const STORAGE_KEYS = {
-  players: "katregal:players",
-  playersVer: "katregal:players:ver", // לבקרת Bootstrap
-  teamCount: "katregal:teamCount",
-  teams: "katregal:teams",
-  teamsHistory: "katregal:teams:snapshots",
-  rounds: "katregal:rounds",
+export const STORAGE_KEYS = {
+  players: "katregel.players.v2",
+  cycles: "katregel.cycles.v2",          // רשימת מחזורים שמורים (metadata)
+  current: "katregel.current.v2",        // מצב נוכחי (קבוצות, שיבוצים, משחקים, כובשים)
 };
 
-const BOOTSTRAP_VERSION = "2025-09-20-v1";
-
-// LocalStorage-safe (עובד גם ב-SSR/Build)
-function ls() {
-  if (typeof window === "undefined") {
-    const mem = new Map();
-    return {
-      getItem: (k) => mem.get(k) ?? null,
-      setItem: (k, v) => mem.set(k, v),
-      removeItem: (k) => mem.delete(k),
-    };
-  }
-  return window.localStorage;
-}
-
-function readJSON(key, fallback) {
+// --- Utilities ---
+function safeParse(json, fallback) {
   try {
-    const raw = ls().getItem(key);
-    if (!raw) return fallback;
-    return JSON.parse(raw);
+    const v = JSON.parse(json);
+    return v ?? fallback;
   } catch {
     return fallback;
   }
 }
-
-function writeJSON(key, value) {
-  try {
-    ls().setItem(key, JSON.stringify(value));
-  } catch {}
+function save(key, value) {
+  localStorage.setItem(key, JSON.stringify(value));
+}
+function load(key, fallback) {
+  const raw = localStorage.getItem(key);
+  return safeParse(raw, fallback);
+}
+function ensureId(obj) {
+  if (!obj.id) obj.id = crypto.randomUUID();
+  return obj;
 }
 
-function toNumberOr(v, d) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : d;
-}
-
-// ---- נרמול שחקן: מיישר שמות שדות ותאימות למסכים קיימים ----
-function normalizePlayer(raw, idToName) {
-  if (!raw) return null;
-  const name = raw.name || "";
-  if (!name) return null;
-
-  // map prefer/avoid -> שמות (אם ניתנו מזהים)
-  const toNameList = (val) => {
-    if (!val) return [];
-    if (Array.isArray(val)) {
-      return val
-        .map((x) => {
-          if (idToName && (typeof x === "number" || (typeof x === "string" && idToName.has(String(x))))) {
-            return idToName.get(String(x)) ?? String(x);
-          }
-          return String(x);
-        })
-        .filter(Boolean);
-    }
-    return String(val).split(",").map((s) => s.trim()).filter(Boolean);
-  };
-
-  const rating = toNumberOr(raw.r ?? raw.rating, 6);
-  const active = (typeof raw.selected === "boolean") ? raw.selected : (raw.active !== false);
-
-  const mustWith = Array.isArray(raw.mustWith) ? raw.mustWith : toNameList(raw.prefer);
-  const avoidWith = Array.isArray(raw.avoidWith) ? raw.avoidWith : toNameList(raw.avoid);
-
-  const pos = raw.pos || "MF";
-
-  // מחזירים גם וגם (לתאימות מסכים קיימים)
-  return {
-    ...raw,
-    name,
-    pos,
-    rating,         // לשדות החדשים
-    r: rating,      // לתצוגות הישנות
-    active,         // לשדות החדשים
-    selected: active, // לתצוגות הישנות
-    mustWith,
-    avoidWith,
-  };
-}
-
-// ---- נרמול מערך שחקנים ממקור ייבוא (public/players.json) ----
-function normalizeImportedList(arr) {
-  if (!Array.isArray(arr)) return [];
-  const idToName = new Map();
-  for (const p of arr) {
-    if (p && p.name && (typeof p.id === "number" || typeof p.id === "string")) {
-      idToName.set(String(p.id), p.name);
-    }
-  }
-  return arr.map((p) => normalizePlayer(p, idToName)).filter(Boolean);
-}
-
-// ---- Bootstrap אוטומטי מ-/players.json (רק בדפדפן, פעם אחת לגרסה) ----
-async function bootstrapFromPublicIfNeeded() {
-  if (typeof window === "undefined") return; // לא בזמן build
-  try {
-    const currentVer = ls().getItem(STORAGE_KEYS.playersVer);
-    const existing = readJSON(STORAGE_KEYS.players, []);
-    const needsBootstrap =
-      currentVer !== BOOTSTRAP_VERSION || !Array.isArray(existing) || existing.length < 20;
-
-    if (!needsBootstrap) return;
-
-    const res = await fetch("/players.json", { cache: "no-store" });
-    if (!res.ok) {
-      // אין קובץ public/players.json – לא נורא, נשארים עם מה שיש
-      ls().setItem(STORAGE_KEYS.playersVer, BOOTSTRAP_VERSION);
-      return;
-    }
-    const raw = await res.json();
-    const normalized = normalizeImportedList(raw);
-    if (normalized.length) {
-      writeJSON(STORAGE_KEYS.players, normalized);
-    }
-    ls().setItem(STORAGE_KEYS.playersVer, BOOTSTRAP_VERSION);
-  } catch {
-    // מתעלמים – לא חוסם את האפליקציה
-  }
-}
-
-// מריצים Bootstrap ברגע שהמודול נטען בדפדפן
-if (typeof window !== "undefined") {
-  bootstrapFromPublicIfNeeded();
-}
-
-// ===== Public API =====
-
-// שחקנים
+// --- Players ---
 export function getPlayers() {
-  // תמיד נחזיר מנורמל (גם אם זה נתון ישן ב-LS)
-  const arr = readJSON(STORAGE_KEYS.players, []);
-  return Array.isArray(arr) ? arr.map((p) => normalizePlayer(p)) : [];
+  let players = load(STORAGE_KEYS.players, null);
+  if (!players) {
+    // first run: seed from file
+    players = playersSeed.map((p) =>
+      ensureId({
+        name: p.name,
+        pos: p.pos ?? "MF",
+        rating: typeof p.rating === "number" ? p.rating : 5,
+        plays: p.plays ?? true,
+        mustWith: Array.isArray(p.mustWith) ? p.mustWith : [],
+        avoidWith: Array.isArray(p.avoidWith) ? p.avoidWith : [],
+      })
+    );
+    savePlayers(players);
+  }
+  return players;
 }
 
-export function setPlayers(list) {
-  const arr = Array.isArray(list) ? list.map((p) => normalizePlayer(p)) : [];
-  writeJSON(STORAGE_KEYS.players, arr);
+export function savePlayers(players) {
+  const normalized = players.map((p) =>
+    ensureId({
+      id: p.id,
+      name: String(p.name ?? "").trim(),
+      pos: p.pos ?? "MF",
+      rating: Number.isFinite(p.rating) ? p.rating : 5,
+      plays: Boolean(p.plays),
+      mustWith: Array.isArray(p.mustWith) ? p.mustWith : [],
+      avoidWith: Array.isArray(p.avoidWith) ? p.avoidWith : [],
+    })
+  );
+  save(STORAGE_KEYS.players, normalized);
+  return normalized;
 }
 
-// כמה פעילים
-export function countActive(players) {
-  const arr = Array.isArray(players) ? players : getPlayers();
-  return arr.filter((p) => p && (p.active ?? p.selected) !== false).length;
+// --- Current session (teams/fixtures/scorers UI state) ---
+export function getCurrentState() {
+  // shape:
+  // {
+  //   teams: [{id, name, playerIds:[], showRatings:boolean}],
+  //   fixtures: [{id, homeId, awayId, scoreHome, scoreAway}],
+  //   scorers: { [playerId]: goalsNumber },
+  // }
+  return load(STORAGE_KEYS.current, {
+    teams: defaultTeams(),
+    fixtures: [],
+    scorers: {},
+  });
 }
 
-// מספר קבוצות
-export function getTeamCount() {
-  const n = readJSON(STORAGE_KEYS.teamCount, 4);
-  const num = Number(n);
-  return Number.isFinite(num) && num > 0 ? num : 4;
-}
-export function setTeamCount(n) {
-  const num = Number(n);
-  writeJSON(STORAGE_KEYS.teamCount, Number.isFinite(num) && num > 0 ? num : 4);
-}
-
-// מחזורים
-export function getRounds() {
-  return readJSON(STORAGE_KEYS.rounds, []);
-}
-export function setRounds(rounds) {
-  writeJSON(STORAGE_KEYS.rounds, Array.isArray(rounds) ? rounds : []);
+export function saveCurrentState(state) {
+  const sane = {
+    teams: Array.isArray(state?.teams) ? state.teams.map(sanitizeTeam) : defaultTeams(),
+    fixtures: Array.isArray(state?.fixtures) ? state.fixtures.map(sanitizeFixture) : [],
+    scorers: typeof state?.scorers === "object" && state?.scorers ? state.scorers : {},
+  };
+  save(STORAGE_KEYS.current, sane);
+  return sane;
 }
 
-// היסטוריית קבוצות
-export function saveTeamsSnapshot(snapshot) {
-  const history = readJSON(STORAGE_KEYS.teamsHistory, []);
-  const entry = { ...snapshot, _ts: Date.now() };
-  history.push(entry);
-  writeJSON(STORAGE_KEYS.teamsHistory, history.slice(-50));
-  writeJSON(STORAGE_KEYS.teams, snapshot?.teams ?? null);
-}
-export function getLastTeams() {
-  return readJSON(STORAGE_KEYS.teams, null);
-}
-export function getTeamsHistory() {
-  return readJSON(STORAGE_KEYS.teamsHistory, []);
+function defaultTeams(n = 4) {
+  return Array.from({ length: n }).map((_, i) => ({
+    id: crypto.randomUUID(),
+    name: `קבוצה ${i + 1}`,
+    playerIds: [],
+    showRatings: true,
+  }));
 }
 
-// ניקוי כולל (זהירות!)
-export function clearAllStorage() {
-  try {
-    ls().removeItem(STORAGE_KEYS.players);
-    ls().removeItem(STORAGE_KEYS.playersVer);
-    ls().removeItem(STORAGE_KEYS.teamCount);
-    ls().removeItem(STORAGE_KEYS.teams);
-    ls().removeItem(STORAGE_KEYS.teamsHistory);
-    ls().removeItem(STORAGE_KEYS.rounds);
-  } catch {}
+function sanitizeTeam(t) {
+  return {
+    id: t.id ?? crypto.randomUUID(),
+    name: String(t.name ?? "קבוצה"),
+    playerIds: Array.isArray(t.playerIds) ? t.playerIds : [],
+    showRatings: Boolean(t.showRatings),
+  };
+}
+function sanitizeFixture(f) {
+  return {
+    id: f.id ?? crypto.randomUUID(),
+    homeId: f.homeId ?? null,
+    awayId: f.awayId ?? null,
+    scoreHome: Number.isFinite(f.scoreHome) ? f.scoreHome : 0,
+    scoreAway: Number.isFinite(f.scoreAway) ? f.scoreAway : 0,
+  };
+}
+
+// --- Cycles list (saved snapshots) ---
+export function getCycles() {
+  // each cycle meta: { id, name, dateISO }
+  return load(STORAGE_KEYS.cycles, []);
+}
+
+export function saveCycles(list) {
+  const sane = (Array.isArray(list) ? list : []).map((c) => ({
+    id: c.id ?? crypto.randomUUID(),
+    name: String(c.name ?? "מחזור ללא שם"),
+    dateISO: c.dateISO ?? new Date().toISOString(),
+  }));
+  save(STORAGE_KEYS.cycles, sane);
+  return sane;
+}
+
+// create a snapshot entry in cycles, and persist currentState payload under an additional key
+export function saveCycleSnapshot(name, payload) {
+  const id = crypto.randomUUID();
+  const cycles = getCycles();
+  const entry = { id, name: name?.trim() || nameFromNow(), dateISO: new Date().toISOString() };
+  const updated = [entry, ...cycles];
+  saveCycles(updated);
+  // payload under dedicated key:
+  localStorage.setItem(cycleDataKey(id), JSON.stringify(payload ?? getCurrentState()));
+  return entry;
+}
+
+export function loadCycleSnapshot(id) {
+  const raw = localStorage.getItem(cycleDataKey(id));
+  return safeParse(raw, null);
+}
+
+export function deleteCycle(id) {
+  const list = getCycles().filter((c) => c.id !== id);
+  saveCycles(list);
+  localStorage.removeItem(cycleDataKey(id));
+  return list;
+}
+
+function cycleDataKey(id) {
+  return `katregel.cycle.${id}`;
+}
+function nameFromNow() {
+  return new Date().toLocaleString("he-IL", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+// --- Export/Import ALL data (for מעבר בין מחשבים) ---
+export function exportAll() {
+  const blob = {
+    players: getPlayers(),
+    current: getCurrentState(),
+    cycles: getCycles(),
+    snapshots: getCycles().map((c) => ({ id: c.id, data: loadCycleSnapshot(c.id) })),
+    version: 2,
+    exportedAt: new Date().toISOString(),
+  };
+  return JSON.stringify(blob, null, 2);
+}
+
+export function importAll(jsonString) {
+  const data = safeParse(jsonString, null);
+  if (!data) throw new Error("קובץ JSON לא תקין.");
+  if (!Array.isArray(data.players)) throw new Error("שדה players חסר או לא תקין.");
+
+  savePlayers(data.players);
+  if (data.current) saveCurrentState(data.current);
+
+  if (Array.isArray(data.cycles)) {
+    saveCycles(data.cycles);
+    if (Array.isArray(data.snapshots)) {
+      data.snapshots.forEach((s) => {
+        if (s?.id && s?.data) {
+          localStorage.setItem(cycleDataKey(s.id), JSON.stringify(s.data));
+        }
+      });
+    }
+  }
 }
