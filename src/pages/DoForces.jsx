@@ -1,410 +1,264 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import {
-  generateTeams,
-  checkTeamSizePolicy,
-  buildMustUnits,
-  violatesAvoidWith,
-} from "../logic/balance";
+// src/pages/DoForces.jsx
+import React, { useEffect, useMemo, useState } from "react";
 
-// ===== helpers =====
-const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
-const sum = (arr, sel = (x) => x) => arr.reduce((s, x) => s + sel(x), 0);
-const avg = (arr, sel = (x) => x) =>
-  arr.length ? +(sum(arr, sel) / arr.length).toFixed(2) : 0;
+/** ================== הגדרות אחסון ================== **/
+const LS_KEYS = {
+  PLAYERS: "players",          // אותו מפתח שמסך "שחקנים" שומר אליו
+  DRAFT: "teams_draft_v1",     // טיוטת מחזור אחרונה
+  UI: "teams_ui_state_v1",     // מצב UI (הסתר ציונים + מס’ קבוצות)
+};
 
-// ===== storage (כמו אצלך) =====
-function loadPlayers() {
+function loadPlayersFromLocalStorage() {
   try {
-    const raw = localStorage.getItem("players");
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
-    }
-  } catch {}
-  return [];
+    const raw = localStorage.getItem(LS_KEYS.PLAYERS);
+    const arr = JSON.parse(raw || "[]");
+    return arr
+      .map((p, idx) => ({
+        id: p.id ?? `${p.name}-${idx}`,
+        name: (p.name || "").trim(),
+        pos: p.pos || "MF",
+        rating: typeof p.rating === "number" ? p.rating : parseFloat(p.rating) || 0,
+        mustWith: Array.isArray(p.mustWith) ? p.mustWith : [],
+        notWith: Array.isArray(p.notWith) ? p.notWith : [],
+        active: p.active !== false, // ברירת־מחדל: משחק
+      }))
+      .filter((p) => p.active);
+  } catch {
+    return [];
+  }
 }
-function savePlayers(players) {
-  try {
-    localStorage.setItem("players", JSON.stringify(players));
-  } catch {}
+
+function loadDraft() {
+  try { return JSON.parse(localStorage.getItem(LS_KEYS.DRAFT) || "null"); }
+  catch { return null; }
+}
+function saveDraft(d) {
+  localStorage.setItem(LS_KEYS.DRAFT, JSON.stringify(d));
 }
 
-export default function DoForces() {
-  const [players, setPlayers] = useState(loadPlayers());
-  const [teamCount, setTeamCount] = useState(4);
-  const [teams, setTeams] = useState(() => Array.from({ length: 4 }, () => []));
-  const [hideCardRatings, setHideCardRatings] = useState(false);
-  const [toast, setToast] = useState(null);
+function loadUi() {
+  try { return JSON.parse(localStorage.getItem(LS_KEYS.UI) || "null") || { hideRatingsInCards:false, teamsCount:4 }; }
+  catch { return { hideRatingsInCards:false, teamsCount:4 }; }
+}
+function saveUi(u) { localStorage.setItem(LS_KEYS.UI, JSON.stringify(u)); }
 
-  useEffect(() => savePlayers(players), [players]);
-
-  const activePlayers = useMemo(() => players.filter((p) => p.playing), [players]);
-  const assignedCount = useMemo(() => sum(teams, (t) => t.length), [teams]);
-
-  // ===== toast =====
-  function openToast(type, msg) {
-    setToast({ type, msg });
-    window.clearTimeout(openToast?._t);
-    openToast._t = window.setTimeout(() => setToast(null), 2200);
-  }
-
-  // ===== drag & drop =====
-  const dragRef = useRef({ playerId: null, fromTeamIdx: null });
-  const findPlayerById = (id) => players.find((p) => String(p.id) === String(id));
-  const handleDragStart = (e, playerId, fromTeamIdx) => {
-    dragRef.current = { playerId, fromTeamIdx };
-    e.dataTransfer.effectAllowed = "move";
-  };
-  const handleDragOver = (e) => e.preventDefault();
-
-  function dropToTeam(targetTeamIdx) {
-    const { playerId } = dragRef.current;
-    if (!playerId) return;
-    const player = findPlayerById(playerId);
-    if (!player) return;
-
-    // חסימת "לא־עם"
-    if (violatesAvoidWith(teams[targetTeamIdx], player)) {
-      openToast("warn", "הגרירה נחסמה: התנגשות 'לא־עם' בקבוצה היעד");
-      return;
-    }
-
-    // next state
-    const next = teams.map((t) => t.slice());
-    for (const t of next) {
-      const i = t.findIndex((x) => x.id === player.id);
-      if (i !== -1) t.splice(i, 1);
-    }
-    next[targetTeamIdx].push(player);
-
-    // איזון גדלים ±1
-    if (!checkTeamSizePolicy(next, activePlayers.length)) {
-      openToast("warn", "איזון גדלים (±1) — הפעולה בוטלה");
-      return;
-    }
-
-    // אזהרת פירוק חייב־עם (לא חוסם)
-    const unit = buildMustUnits(activePlayers).find((u) => u.some((x) => x.id === player.id));
-    if (unit) {
-      const idx = next.findIndex((t) => t.some((x) => x.id === unit[0].id));
-      const together = idx !== -1 && unit.every((m) => next[idx].some((x) => x.id === m.id));
-      if (!together) openToast("warn", "זהירות: פירקת יחידת 'חייב־עם'");
-    }
-
-    setTeams(next);
-  }
-
-  const handleDropOnTeam = (e, idx) => {
-    e.preventDefault();
-    dropToTeam(idx);
-    dragRef.current = { playerId: null, fromTeamIdx: null };
-  };
-
-  const handleDropBackToPool = (e) => {
-    e.preventDefault();
-    const { playerId } = dragRef.current;
-    if (!playerId) return;
-    setTeams((ts) => ts.map((t) => t.filter((x) => x.id !== playerId)));
-    dragRef.current = { playerId: null, fromTeamIdx: null };
-  };
-
-  // ===== actions =====
-  function doMakeTeams() {
-    try {
-      const newTeams = generateTeams(players, teamCount); // חלוקה חדשה בכל לחיצה
-      setTeams(newTeams);
-      openToast("ok", "נוצרה חלוקה חדשה");
-    } catch (e) {
-      openToast("err", e.message || "כשל ביצירת קבוצות");
-    }
-  }
-
-  function saveDraftCycle() {
-    const payload = {
-      id: Date.now().toString(36),
-      ts: new Date().toISOString(),
-      teamCount,
-      playersActive: activePlayers.length,
-      playersAssigned: assignedCount,
-      teams: teams.map((t) =>
-        t.map((p) => ({ id: p.id, name: p.name, pos: p.pos, rating: p.rating }))
-      ),
-    };
-    try {
-      const raw = localStorage.getItem("draftCycles");
-      const arr = raw ? JSON.parse(raw) : [];
-      arr.unshift(payload);
-      localStorage.setItem("draftCycles", JSON.stringify(arr));
-      openToast("ok", "הטיוטה נשמרה (מסך מנהל)");
-    } catch {
-      openToast("err", "שגיאה בשמירה");
-    }
-  }
-
-  // ===== table behaviour =====
-  const [sortKey, setSortKey] = useState("name");
-  const [sortDir, setSortDir] = useState("asc");
-  const [nameFilter, setNameFilter] = useState("");
-
-  const tablePlayers = useMemo(() => {
-    const rows = players
-      .filter((p) => p.name.toLowerCase().includes(nameFilter.trim().toLowerCase()))
-      .slice();
-    const dir = sortDir === "asc" ? 1 : -1;
-    rows.sort((a, b) => {
-      let A = a[sortKey],
-        B = b[sortKey];
-      if (typeof A === "string") A = A.toLowerCase();
-      if (typeof B === "string") B = B.toLowerCase();
-      if (A < B) return -1 * dir;
-      if (A > B) return 1 * dir;
-      return 0;
+/** ================== עזרי לוגיקה ================== **/
+function shuffle(a0){const a=[...a0];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a;}
+function emptyTeams(n){return Array.from({length:n},(_,i)=>({id:`team-${i+1}`,name:`קבוצה ${i+1}`,players:[]}));}
+function teamStats(t){const c=t.players.length,sum=t.players.reduce((s,p)=>s+(p.rating||0),0),avg=c?sum/c:0;return{count:c,sum,avg:Math.round(avg*10)/10};}
+function sizeTargets(playersCount,teamsCount){const base=Math.floor(playersCount/teamsCount),extra=playersCount%teamsCount;return Array.from({length:teamsCount},(_,i)=>base+(i<extra?1:0));}
+function violatesNotWith(team,player){if(!player?.notWith?.length)return false;const names=new Set(team.players.map(p=>p.name));return player.notWith.some(n=>names.has(n));}
+function mustWithWarnings(teams){
+  const warnings=new Set();
+  const nameToTeam=new Map();
+  teams.forEach((t,ti)=>t.players.forEach(p=>nameToTeam.set(p.name,ti)));
+  teams.forEach(t=>t.players.forEach(p=>{
+    (p.mustWith||[]).forEach(m=>{
+      const t1=nameToTeam.get(p.name),t2=nameToTeam.get(m);
+      if(t2!==undefined && t1!==t2) warnings.add(`${p.name} חייב לשחק עם ${m} (כעת מופרדים)`);
     });
-    return rows;
-  }, [players, sortKey, sortDir, nameFilter]);
-
-  const toggleSort = (k) =>
-    k === sortKey ? setSortDir((d) => (d === "asc" ? "desc" : "asc")) : (setSortKey(k), setSortDir("asc"));
-  const togglePlaying = (id) =>
-    setPlayers((ps) => ps.map((p) => (p.id === id ? { ...p, playing: !p.playing } : p)));
-  const onEditPos = (id, pos) =>
-    setPlayers((ps) => ps.map((p) => (p.id === id ? { ...p, pos } : p)));
-  const onEditRating = (id, v) => {
-    const num = clamp(parseFloat(v) || 0, 0, 10);
-    setPlayers((ps) => ps.map((p) => (p.id === id ? { ...p, rating: num } : p)));
-  };
-  const onEditLists = (id) => {
-    const pl = players.find((p) => p.id === id);
-    if (!pl) return;
-    const must = prompt("חייב־עם (שמות מופרדים בפסיק):", (pl.mustWith || []).join(","));
-    const avoid = prompt("לא־עם (שמות מופרדים בפסיק):", (pl.avoidWith || []).join(","));
-    setPlayers((ps) =>
-      ps.map((p) =>
-        p.id === id
-          ? {
-              ...p,
-              mustWith: must ? must.split(",").map((s) => s.trim()).filter(Boolean) : [],
-              avoidWith: avoid ? avoid.split(",").map((s) => s.trim()).filter(Boolean) : [],
-            }
-          : p
-      )
-    );
-  };
-  const onDelete = (id) => setPlayers((ps) => ps.filter((p) => p.id !== id));
-
-  // ===== card stats =====
-  const teamStats = teams.map((t) => ({
-    avg: +(avg(t, (x) => x.rating) || 0).toFixed(2),
-    sum: +sum(t, (x) => x.rating).toFixed(1),
   }));
+  return [...warnings];
+}
+function canDrop(team,player,max){ if(team.players.length>=max) return false; if(violatesNotWith(team,player)) return false; return true; }
+
+function buildRandomTeams(players,teamsCount){
+  const targets=sizeTargets(players.length,teamsCount);
+  const teams=emptyTeams(teamsCount);
+  const rnd=shuffle(players);
+  rnd.forEach(p=>{
+    const order=teams.map((t,i)=>({i,t,need:targets[i]-t.players.length})).filter(x=>x.need>0).sort((a,b)=>b.need-a.need);
+    let placed=false;
+    for(const o of order){ if(canDrop(o.t,p,targets[o.i])){ o.t.players.push(p); placed=true; break; } }
+    if(!placed){
+      const idx=teams.findIndex((t,i)=>t.players.length<targets[i]);
+      if(idx>=0) teams[idx].players.push(p);
+      else teams[0].players.push(p);
+    }
+  });
+  return teams;
+}
+
+/** ================== דף עשה כוחות ================== **/
+export default function DoForces(){
+  const [players,setPlayers]=useState([]);
+  const [teamsCount,setTeamsCount]=useState(4);
+  const [teams,setTeams]=useState(emptyTeams(4));
+  const [hideRatingsInCards,setHideRatingsInCards]=useState(false);
+  const [drag,setDrag]=useState(null);
+  const [hoverWarn,setHoverWarn]=useState(null);
+
+  // טעינה ראשונית + האזנה לשינויים ב-localStorage (למקרה שעוברים לטאב "שחקנים" ומשנים)
+  useEffect(()=>{
+    const ui=loadUi();
+    setHideRatingsInCards(!!ui.hideRatingsInCards);
+    setTeamsCount(ui.teamsCount||4);
+
+    const actives=loadPlayersFromLocalStorage();
+    setPlayers(actives);
+
+    const draft=loadDraft();
+    if(draft?.teamsCount){
+      setTeams(draft.teams||emptyTeams(draft.teamsCount));
+      setTeamsCount(draft.teamsCount);
+    }else{
+      setTeams(emptyTeams(ui.teamsCount||4));
+    }
+
+    const onStorage=(e)=>{ if(e.key===LS_KEYS.PLAYERS){ setPlayers(loadPlayersFromLocalStorage()); } };
+    window.addEventListener("storage",onStorage);
+    return ()=>window.removeEventListener("storage",onStorage);
+  },[]);
+
+  const activeCount=players.length;
+  const targets=useMemo(()=>sizeTargets(activeCount,teamsCount),[activeCount,teamsCount]);
+  const mustAlerts=useMemo(()=>mustWithWarnings(teams),[teams]);
+
+  function onMakeTeams(){ setTeams(buildRandomTeams(players,teamsCount)); }
+  function onSaveDraft(){
+    saveDraft({ savedAt:new Date().toISOString(), teamsCount, teams });
+    alert("הטיוטה נשמרה (localStorage).");
+  }
+  function onClear(){ setTeams(emptyTeams(teamsCount)); }
+  function onToggleHide(){ const next=!hideRatingsInCards; setHideRatingsInCards(next); saveUi({hideRatingsInCards:next,teamsCount}); }
+  function onChangeTeamsCount(n){ const num=Math.max(2,Math.min(8,Number(n)||4)); setTeamsCount(num); saveUi({hideRatingsInCards,teamsCount:num}); setTeams(emptyTeams(num)); }
+
+  // D&D
+  function dragFromTable(p){ setDrag({from:"table",player:p}); }
+  function dragFromTeam(ti,pi){ setDrag({from:"team",teamIdx:ti,pIdx:pi,player:teams[ti].players[pi]}); }
+  function endDrag(){ setDrag(null); setHoverWarn(null); }
+  function overTeam(e,ti){ e.preventDefault(); if(!drag) return;
+    const t=teams[ti]; const max=targets[ti];
+    if(!canDrop(t,drag.player,max)) setHoverWarn("אי אפשר לשבץ כאן (חסימת 'לא־עם' או שהקבוצה מלאה)");
+    else setHoverWarn(null);
+  }
+  function dropTeam(e,ti){ e.preventDefault(); if(!drag) return;
+    const t=teams[ti]; const max=targets[ti]; if(!canDrop(t,drag.player,max)) return endDrag();
+    const next=teams.map(x=>({ ...x, players:[...x.players] }));
+    if(drag.from==="team"){ next[drag.teamIdx].players.splice(drag.pIdx,1); }
+    next[ti].players.push(drag.player);
+    setTeams(next); endDrag();
+  }
+  function overTable(e){ e.preventDefault(); }
+  function dropTable(e){ e.preventDefault(); if(!drag || drag.from!=="team") return;
+    const next=teams.map(x=>({ ...x, players:[...x.players] })); next[drag.teamIdx].players.splice(drag.pIdx,1); setTeams(next); endDrag();
+  }
+  function removeFromTeam(ti,pi){ const next=teams.map(x=>({ ...x, players:[...x.players] })); next[ti].players.splice(pi,1); setTeams(next); }
 
   return (
-    <div className="mx-auto px-3" dir="rtl">
-      {/* פס עליון: מונים משמאל, כפתורים מימין */}
-      <div className="flex items-center justify-between mt-4 mb-3">
-        <div className="flex items-center gap-4 text-sm text-slate-300">
-          <div>פעילים: <b>{activePlayers.length}</b></div>
-          <div>משובצים: <b>{assignedCount}</b></div>
-          <div className="flex items-center gap-2">
-            <label>מס׳ קבוצות</label>
-            <input
-              type="number"
-              min={2}
-              max={8}
-              value={teamCount}
-              onChange={(e) => {
-                const val = clamp(+e.target.value || 2, 2, 8);
-                setTeamCount(val);
-                setTeams(Array.from({ length: val }, () => [])); // מאפס כרטיסים בעת שינוי
-              }}
-              className="w-16 rounded-md bg-[#0f1a2e] text-white border border-[#24324a] px-2 py-1"
-            />
+    <div className="page" style={{padding:"16px 12px"}}>
+      <header style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
+        <h1 style={{margin:0}}>קטרגל־גן דניאל ⚽</h1>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <label style={{display:"flex",alignItems:"center",gap:6}}>
+            <span>מס׳ קבוצות</span>
+            <select value={teamsCount} onChange={e=>onChangeTeamsCount(e.target.value)} className="pill" style={{padding:"6px 10px",borderRadius:999}}>
+              {[2,3,4,5,6,7,8].map(n=> <option key={n} value={n}>{n}</option>)}
+            </select>
+          </label>
+          <button className="btn" onClick={onMakeTeams}>עשה כוחות</button>
+          <button className="btn ghost" onClick={onClear}>איפוס</button>
+          <button className="btn" onClick={onSaveDraft}>שמור מחזור (טיוטה)</button>
+          <label className="pill" style={{display:"flex",alignItems:"center",gap:6,padding:"6px 10px",borderRadius:999}}>
+            <input type="checkbox" checked={hideRatingsInCards} onChange={onToggleHide}/>
+            <span>הסתר ציונים (בכרטיסים בלבד)</span>
+          </label>
+        </div>
+      </header>
+
+      <section style={{marginTop:18}}>
+        <h2 style={{margin:"0 0 8px 0",opacity:.9}}>קבוצות למחזור</h2>
+
+        {hoverWarn && (
+          <div style={{margin:"6px 0 10px",padding:"8px 12px",borderRadius:8,border:"1px dashed var(--edge,#334)",background:"var(--card,#0f1a2e)"}}>
+            {hoverWarn}
           </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setHideCardRatings((v) => !v)}
-            className="rounded-xl border border-[#24324a] bg-[#0f1a2e] hover:bg-[#182544] px-3 py-2 text-sm"
-          >
-            {hideCardRatings ? "הצג ציונים (בכרטיסים)" : "הסתר ציונים (בכרטיסים בלבד)"}
-          </button>
-          <button
-            onClick={doMakeTeams}
-            className="rounded-xl bg-green-600 hover:bg-green-700 px-3 py-2 text-sm text-white shadow"
-          >
-            עשה כוחות
-          </button>
-          <button
-            onClick={saveDraftCycle}
-            className="rounded-xl bg-slate-600 hover:bg-slate-700 px-3 py-2 text-sm text-white"
-          >
-            שמור מחזור (טיוטה)
-          </button>
-        </div>
-      </div>
+        )}
+        {mustAlerts.length>0 && (
+          <div style={{margin:"6px 0 10px",padding:"8px 12px",borderRadius:8,border:"1px solid var(--warn,#ff5c7a)",background:"rgba(255,92,122,.08)"}}>
+            {mustAlerts.map((w,i)=><div key={i}>⚠️ {w}</div>)}
+          </div>
+        )}
 
-      {/* ===== קבוצות — למעלה (לוק כמו בתמונה) ===== */}
-      <div className="rounded-2xl border border-[#24324a] bg-[#0f1a2e] mb-4">
-        <div className="flex items-center justify-between px-4 py-2 bg-[#0f1a2e] border-b border-[#24324a] rounded-t-2xl">
-          <div className="text-white text-sm font-medium">קבוצות למחזור</div>
-          <div className="text-xs text-slate-400">גרור שחקן מהטבלה לקבוצה, או חזרה לטבלה להסרה.</div>
-        </div>
-
-        <div className="grid xl:grid-cols-4 lg:grid-cols-3 sm:grid-cols-2 grid-cols-1 gap-3 p-3">
-          {teams.map((team, idx) => (
-            <div
-              key={idx}
-              className="rounded-xl border border-[#24324a] bg-[#0f1a2e]"
-              onDragOver={handleDragOver}
-              onDrop={(e) => handleDropOnTeam(e, idx)}
-            >
-              <div className="flex items-center justify-between px-3 py-2">
-                <div className="text-slate-200 font-semibold">קבוצה {idx + 1}</div>
-                <div className="text-[12px] text-slate-300">ממוצע {teamStats[idx].avg} | סכ״כ {teamStats[idx].sum}</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:12}}>
+          {teams.map((t,ti)=>{
+            const stats=teamStats(t); const target=targets[ti]??0; const full=t.players.length>=target;
+            return (
+              <div key={t.id}
+                   className={`card team-card ${full?"full":""}`}
+                   onDragOver={e=>overTeam(e,ti)} onDrop={e=>dropTeam(e,ti)}
+                   style={{border:"1px solid var(--edge,#24324a)",background:"var(--card,#0f1a2e)",borderRadius:14,padding:12,minHeight:140}}>
+                <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",gap:8,marginBottom:6}}>
+                  <div style={{fontWeight:600}}>{t.name}</div>
+                  <div style={{fontSize:12,opacity:.85}}>ממוצע {stats.avg} | סכ״כ {stats.sum.toFixed(1)} | {stats.count}/{target}</div>
+                </div>
+                <ul style={{listStyle:"disc",paddingInlineStart:20,margin:0}}>
+                  {t.players.map((p,pi)=>(
+                    <li key={p.id}
+                        draggable onDragStart={()=>dragFromTeam(ti,pi)} onDragEnd={endDrag}
+                        title="גרור כדי להחזיר לטבלה"
+                        style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:"6px 8px",borderRadius:8,margin:"4px 0",background:"rgba(255,255,255,.03)"}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8}}>
+                        <span style={{opacity:.9}}>{p.name}</span>
+                        <span style={{fontSize:12,opacity:.7}}>({p.pos})</span>
+                        {!hideRatingsInCards && <span style={{fontSize:12,opacity:.9}}>ציון {p.rating}</span>}
+                      </div>
+                      <button className="btn tiny ghost" onClick={()=>removeFromTeam(ti,pi)}>הסר</button>
+                    </li>
+                  ))}
+                </ul>
               </div>
-              <div className="h-px bg-[#24324a]" />
-
-              <ul className="p-3 space-y-1">
-                {team.map((p) => (
-                  <li
-                    key={p.id}
-                    draggable
-                    onDragStart={(e) => handleDragStart(e, p.id, idx)}
-                    className="flex items-center justify-between px-2 py-1 rounded-md border border-transparent hover:border-[#24324a] hover:bg-[#101b31] cursor-move"
-                  >
-                    <div className="flex items-center gap-2 text-[13px] text-slate-200">
-                      <span className="text-slate-500">•</span>
-                      <span>
-                        {p.name}{" "}
-                        <span className="text-[11px] text-slate-400">({p.pos})</span>
-                      </span>
-                    </div>
-                    {!hideCardRatings && (
-                      <div className="text-[13px] text-slate-200">{p.rating}</div>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
+            );
+          })}
         </div>
-      </div>
+      </section>
 
-      {/* ===== טבלת השחקנים — למטה ===== */}
-      <div
-        className="rounded-2xl border border-[#24324a] bg-[#0f1a2e] overflow-hidden"
-        onDragOver={handleDragOver}
-        onDrop={handleDropBackToPool}
-      >
-        <div className="flex items-center justify-between bg-[#1e5a3f] text-white py-2 px-3 text-sm">
-          <div>רשימת השחקנים</div>
-          <input
-            placeholder="חפש שם…"
-            value={nameFilter}
-            onChange={(e) => setNameFilter(e.target.value)}
-            className="rounded-md bg-[#0f1a2e] text-white border border-[#24324a] px-2 py-1 text-xs w-40"
-          />
+      <section style={{marginTop:22}}>
+        <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between"}}>
+          <h2 style={{margin:"0 0 8px 0",opacity:.9}}>רשימת השחקנים</h2>
+          <small style={{opacity:.8}}>גרור שחקן מהטבלה לכרטיס קבוצה, או חזרה לכאן להסרה.</small>
         </div>
 
-        <div className="max-h-[500px] overflow-auto">
-          <table className="w-full text-right">
-            <thead className="sticky top-0 bg-[#0f1a2e]">
-              <tr className="text-slate-300 text-sm">
-                <th className="py-2 px-3 w-24">משחק?</th>
-                <th className="py-2 px-3">שם</th>
-                <th className="py-2 px-3 w-24">
-                  <button onClick={() => toggleSort("pos")}>עמדה</button>
-                </th>
-                <th className="py-2 px-3 w-24">
-                  <button onClick={() => toggleSort("rating")}>ציון</button>
-                </th>
-                <th className="py-2 px-3 w-56">חייב־עם</th>
-                <th className="py-2 px-3 w-56">לא־עם</th>
-                <th className="py-2 px-3 w-28">עריכה</th>
-                <th className="py-2 px-3 w-24">מחיקה</th>
+        <div onDragOver={overTable} onDrop={dropTable}
+             style={{overflow:"auto",maxHeight:420,border:"1px solid var(--edge,#24324a)",borderRadius:12}}>
+          <table style={{width:"100%",borderCollapse:"separate",borderSpacing:0}}>
+            <thead style={{position:"sticky",top:0,background:"var(--card,#0f1a2e)",zIndex:1}}>
+              <tr>
+                <th style={th}>משחק?</th>
+                <th style={th}>שם</th>
+                <th style={th}>עמדה</th>
+                <th style={th}>ציון</th>
+                <th style={th}>חייב־עם</th>
+                <th style={th}>לא־עם</th>
               </tr>
             </thead>
             <tbody>
-              {tablePlayers.map((p) => (
-                <tr
-                  key={p.id}
-                  className="border-t border-[#13213a] hover:bg-[#101b31] cursor-grab"
-                  draggable
-                  onDragStart={(e) => handleDragStart(e, p.id, null)}
-                >
-                  <td className="py-2 px-3">
-                    <input
-                      type="checkbox"
-                      checked={!!p.playing}
-                      onChange={() => togglePlaying(p.id)}
-                    />
-                  </td>
-                  <td className="py-2 px-3">{p.name}</td>
-                  <td className="py-2 px-3">{p.pos}</td>
-                  <td className="py-2 px-3">{p.rating}</td>
-                  <td className="py-2 px-3 text-xs text-slate-300">
-                    {(p.mustWith || []).length ? p.mustWith.join(", ") : "—"}
-                  </td>
-                  <td className="py-2 px-3 text-xs text-slate-300">
-                    {(p.avoidWith || []).length ? p.avoidWith.join(", ") : "—"}
-                  </td>
-                  <td className="py-2 px-3">
-                    <div className="flex items-center gap-2 text-xs">
-                      <button
-                        onClick={() => onEditLists(p.id)}
-                        className="rounded-full bg-[#1e5a3f] hover:bg-[#23704e] text-white px-3 py-1"
-                      >
-                        ערוך
-                      </button>
-                      <select
-                        value={p.pos}
-                        onChange={(e) => onEditPos(p.id, e.target.value)}
-                        className="bg-[#0f1a2e] border border-[#24324a] rounded px-2 py-1"
-                      >
-                        <option>GK</option>
-                        <option>DF</option>
-                        <option>MF</option>
-                        <option>FW</option>
-                      </select>
-                      <input
-                        type="number"
-                        step="0.5"
-                        min={0}
-                        max={10}
-                        defaultValue={p.rating}
-                        onBlur={(e) => onEditRating(p.id, e.target.value)}
-                        className="w-16 bg-[#0f1a2e] border border-[#24324a] rounded px-2 py-1"
-                      />
-                    </div>
-                  </td>
-                  <td className="py-2 px-3 text-center">
-                    <button
-                      onClick={() => onDelete(p.id)}
-                      className="text-red-400 hover:text-red-300 text-xs"
-                    >
-                      מחק
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {players.map(p=>{
+                const inTeam=teams.some(t=>t.players.some(x=>x.id===p.id));
+                return (
+                  <tr key={p.id}>
+                    <td style={tdCenter}><input type="checkbox" checked={!inTeam} readOnly/></td>
+                    <td style={{...td,cursor:"grab",userSelect:"none"}}
+                        draggable onDragStart={()=>dragFromTable(p)} onDragEnd={endDrag}
+                        title="גרור לקבוצה">
+                      {p.name}
+                    </td>
+                    <td style={td}>{p.pos}</td>
+                    <td style={td}>{p.rating}</td>
+                    <td style={tdSmall}>{p.mustWith?.length?p.mustWith.join(", "):"—"}</td>
+                    <td style={tdSmall}>{p.notWith?.length?p.notWith.join(", "):"—"}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
-      </div>
-
-      {toast && (
-        <div
-          className={`fixed bottom-4 right-4 px-4 py-2 rounded-xl shadow text-sm ${
-            toast.type === "ok"
-              ? "bg-green-600 text-white"
-              : toast.type === "warn"
-              ? "bg-yellow-600 text-white"
-              : "bg-red-600 text-white"
-          }`}
-        >
-          {toast.msg}
-        </div>
-      )}
+      </section>
     </div>
   );
 }
+
+const th={textAlign:"right",padding:"10px 12px",borderBottom:"1px solid var(--edge,#24324a)",whiteSpace:"nowrap"};
+const td={textAlign:"right",padding:"10px 12px",borderBottom:"1px solid rgba(255,255,255,.06)"};
+const tdSmall={...td,maxWidth:220,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"};
+const tdCenter={...td,textAlign:"center"};
