@@ -129,7 +129,6 @@ const violatesNotWith = (teamPlayers, cl) => {
 };
 
 /* =================== Balancer =================== */
-// שיבוץ ראשוני לפי סכום נמוך ויעד גודל
 function initialAssign(players, teamsCount) {
   const targets = sizeTargets(players.length, teamsCount);
   const teams = emptyTeams(teamsCount);
@@ -170,137 +169,127 @@ function initialAssign(players, teamsCount) {
   teams.forEach((t) => t.players.sort(byRatingDesc));
   return { teams, targets };
 }
-// איזון חוזר אגרסיבי: העברות/החלפות עד צמצום סטיית ממוצעים, שמירת יעד גודל (זהה/±1) ואילוצי not-with
-function cloneTeams(teams) {
-  return teams.map((t) => ({ id: t.id, name: t.name, players: t.players.slice() }));
-}
-function teamBundles(team) {
-  const res = [];
-  const used = new Set();
-  for (const p of team.players) {
-    if (used.has(p)) continue;
-    const g = team.players.filter(
-      (q) => q === p || q.mustWith?.includes(p.name) || p.mustWith?.includes(q.name)
-    );
-    g.forEach((x) => used.add(x));
-    res.push({
-      members: g,
-      size: g.length,
-      ratingSum: sumRating(g),
-      names: new Set(g.map((m) => m.name)),
-      notWith: Array.from(new Set(g.flatMap((m) => m.notWith || []))),
-    });
+
+function strictSizeRebalance(teams, targets) {
+  // דואג שהפרש שחקנים בין קבוצות לא יעלה על ±1
+  const count = (t) => t.players.length;
+  const AVERAGES = () => teams.map((t) => avg(t.players));
+  const MEAN = () => {
+    const a = AVERAGES();
+    return a.reduce((s, v) => s + v, 0) / a.length;
+  };
+
+  // כדי לא לשבור "חייב־עם": נימנע מהעברת שחקן שיש לו mustWith שנמצא איתו באותה קבוצה
+  const canMoveIndividually = (team, player) => {
+    if (!player?.mustWith?.length) return true;
+    const names = new Set(team.players.map((p) => p.name));
+    return !player.mustWith.some((m) => names.has(m)); // אם יש mustWith יחד—לא מעבירים לבד
+  };
+
+  // כל עוד יש הפרש > 1, מעבירים שחקן מהגדולה לקטנה — השחקן שמקטין הכי הרבה את פער הממוצעים
+  let guard = 200;
+  while (guard-- > 0) {
+    const maxIdx = teams.reduce((iBest, t, i) => (count(t) > count(teams[iBest]) ? i : iBest), 0);
+    const minIdx = teams.reduce((iBest, t, i) => (count(t) < count(teams[iBest]) ? i : iBest), 0);
+    if (count(teams[maxIdx]) - count(teams[minIdx]) <= 1) break;
+
+    const from = teams[maxIdx];
+    const to = teams[minIdx];
+    const mean = MEAN();
+
+    let best = null; // {player, scoreImprovement}
+    for (const p of from.players) {
+      if (!canMoveIndividually(from, p)) continue;
+      // בדיקת not-with ביעד
+      const targetHasConflict = (to.players || []).some((q) => p.notWith?.includes(q.name) || q.notWith?.includes(p.name));
+      if (targetHasConflict) continue;
+
+      // נחשב כמה העברה מגדילה "התקרבות" לממוצע כולל
+      const fromNewAvg = avg(from.players.filter((x) => x.id !== p.id));
+      const toNewAvg = avg([...to.players, p]);
+      const scoreBefore = Math.abs(avg(from.players) - mean) + Math.abs(avg(to.players) - mean);
+      const scoreAfter = Math.abs(fromNewAvg - mean) + Math.abs(toNewAvg - mean);
+      const improvement = scoreBefore - scoreAfter;
+
+      if (!best || improvement > best.improvement) best = { player: p, improvement };
+    }
+
+    if (!best) {
+      // לא נמצא מועמד טוב (בגלל must-with/קונפליקטים) — נבחר את בעל הציון הנמוך שלא שובר אילוצים
+      const fallback = from.players
+        .filter((p) => canMoveIndividually(from, p) && !(to.players || []).some((q) => p.notWith?.includes(q.name) || q.notWith?.includes(p.name)))
+        .sort((a, b) => (a.rating || 0) - (b.rating || 0))[0];
+      if (!fallback) break; // אין מה להעביר — נשבור לולאה כדי לא להתקע
+      best = { player: fallback, improvement: 0 };
+    }
+
+    // מעבירים
+    from.players = from.players.filter((x) => x.id !== best.player.id);
+    to.players = [...to.players, best.player].sort(byRatingDesc);
   }
-  if (!res.length) team.players.forEach((p) =>
-    res.push({ members: [p], size: 1, ratingSum: p.rating || 0, names: new Set([p.name]), notWith: p.notWith || [] })
-  );
-  return res;
+  return teams;
 }
-function score(teams) {
-  const avgs = teams.map((t) => avg(t.players));
-  const m = avgs.reduce((s, v) => s + v, 0) / avgs.length;
-  const maxDev = Math.max(...avgs.map((v) => Math.abs(v - m)));
-  const varDev = Math.sqrt(avgs.reduce((s, v) => s + (v - m) ** 2, 0) / avgs.length);
-  return { maxDev, varDev };
-}
-function rebalance(teams, targets, rounds = 400) {
-  let best = cloneTeams(teams);
+
+function varianceTighten(teams, tries = 2) {
+  // שיפצור קטן לצמצום פערי ממוצעים ע"י החלפות נקודתיות (ללא שינוי גדלים)
+  const copy = (xs) => xs.map((t) => ({ ...t, players: t.players.slice() }));
+  const score = (ts) => {
+    const a = ts.map((t) => avg(t.players));
+    const m = a.reduce((s, v) => s + v, 0) / a.length;
+    const maxDev = Math.max(...a.map((v) => Math.abs(v - m)));
+    const varDev = Math.sqrt(a.reduce((s, v) => s + (v - m) ** 2, 0) / a.length);
+    return { maxDev, varDev };
+  };
+  let best = copy(teams);
   let bestS = score(best);
 
-  const canSize = (lens, idx, delta) => {
-    const after = lens[idx] + delta;
-    const tgt = targets[idx];
-    return after >= tgt - 1 && after <= tgt + 1; // זהה/±1 בלבד
-  };
-  const tryImprove = (cur) => {
-    const s = score(cur);
-    if (
-      s.maxDev < bestS.maxDev - 1e-6 ||
-      (Math.abs(s.maxDev - bestS.maxDev) < 1e-6 && s.varDev < bestS.varDev - 1e-6)
-    ) {
-      best = cloneTeams(cur);
-      bestS = s;
-      return true;
-    }
-    return false;
-  };
+  for (let k = 0; k < tries; k++) {
+    for (let i = 0; i < best.length; i++) {
+      for (let j = i + 1; j < best.length; j++) {
+        const A = best[i], B = best[j];
+        // ננסה החלפה חד-חד ערכית שמצמצמת סטייה
+        for (const a of A.players) {
+          for (const b of B.players) {
+            // נימנע משבירת must-with (פשוט: לא מחליפים שחקן שיש לו mustWith בתוך קבוצתו)
+            const inA = new Set(A.players.map((p) => p.name));
+            const inB = new Set(B.players.map((p) => p.name));
+            if (a.mustWith?.some((m) => inA.has(m))) continue;
+            if (b.mustWith?.some((m) => inB.has(m))) continue;
+            // כיבוד not-with לאחר ההחלפה
+            const aInBconflict = B.players.some((q) => q.id !== b.id && (a.notWith?.includes(q.name) || q.notWith?.includes(a.name)));
+            const bInAconflict = A.players.some((q) => q.id !== a.id && (b.notWith?.includes(q.name) || q.notWith?.includes(b.name)));
+            if (aInBconflict || bInAconflict) continue;
 
-  for (let r = 0; r < rounds; r++) {
-    let improved = false;
-    const order = [...best.keys()].map((_, i) => i).sort(() => Math.random() - 0.5);
+            const next = copy(best);
+            next[i].players = [...A.players.filter((p) => p.id !== a.id), b].sort(byRatingDesc);
+            next[j].players = [...B.players.filter((p) => p.id !== b.id), a].sort(byRatingDesc);
 
-    for (let a = 0; a < order.length; a++) {
-      for (let b = a + 1; b < order.length; b++) {
-        const i = order[a], j = order[b];
-        const tA = best[i], tB = best[j];
-        const bA = teamBundles(tA).sort((x, y) => x.ratingSum - y.ratingSum);
-        const bB = teamBundles(tB).sort((x, y) => x.ratingSum - y.ratingSum);
-
-        // A -> B
-        for (const bl of bA) {
-          const lens = best.map((t) => t.players.length);
-          if (!canSize(lens, i, -bl.size) || !canSize(lens, j, +bl.size)) continue;
-          if (violatesNotWith(tB.players, bl)) continue;
-          const cur = cloneTeams(best);
-          cur[i].players = cur[i].players.filter((p) => !bl.names.has(p.name));
-          cur[j].players = [...cur[j].players, ...bl.members].sort(byRatingDesc);
-          if (tryImprove(cur)) { best = cur; improved = true; break; }
-        }
-        if (improved) break;
-
-        // B -> A
-        for (const bl of bB) {
-          const lens = best.map((t) => t.players.length);
-          if (!canSize(lens, j, -bl.size) || !canSize(lens, i, +bl.size)) continue;
-          if (violatesNotWith(tA.players, bl)) continue;
-          const cur = cloneTeams(best);
-          cur[j].players = cur[j].players.filter((p) => !bl.names.has(p.name));
-          cur[i].players = [...cur[i].players, ...bl.members].sort(byRatingDesc);
-          if (tryImprove(cur)) { best = cur; improved = true; break; }
-        }
-        if (improved) break;
-
-        // החלפה
-        for (const aBl of bA) {
-          for (const bBl of bB) {
-            const lens = best.map((t) => t.players.length);
-            if (!canSize(lens, i, -aBl.size + bBl.size)) continue;
-            if (!canSize(lens, j, -bBl.size + aBl.size)) continue;
-            if (violatesNotWith(tA.players.filter((p) => !aBl.names.has(p.name)), bBl)) continue;
-            if (violatesNotWith(tB.players.filter((p) => !bBl.names.has(p.name)), aBl)) continue;
-            const cur = cloneTeams(best);
-            cur[i].players = cur[i].players.filter((p) => !aBl.names.has(p.name));
-            cur[j].players = cur[j].players.filter((p) => !bBl.names.has(p.name));
-            cur[i].players = [...cur[i].players, ...bBl.members].sort(byRatingDesc);
-            cur[j].players = [...cur[j].players, ...aBl.members].sort(byRatingDesc);
-            if (tryImprove(cur)) { best = cur; improved = true; break; }
+            const s = score(next);
+            if (
+              s.maxDev < bestS.maxDev - 1e-6 ||
+              (Math.abs(s.maxDev - bestS.maxDev) < 1e-6 && s.varDev < bestS.varDev - 1e-6)
+            ) {
+              best = next; bestS = s;
+            }
           }
-          if (improved) break;
         }
-        if (improved) break;
       }
-      if (improved) break;
     }
-    if (!improved) break;
   }
   return best;
 }
+
 function buildBalancedTeams(players, teamsCount) {
   const { teams, targets } = initialAssign(players, teamsCount);
-  let best = teams, bestS = score(teams);
-  for (let tries = 0; tries < 4; tries++) {
-    const cand = rebalance(tries ? cloneTeams(best).sort(() => Math.random() - 0.5) : cloneTeams(teams), targets, 350);
-    const s = score(cand);
-    if (
-      s.maxDev < bestS.maxDev - 1e-6 ||
-      (Math.abs(s.maxDev - bestS.maxDev) < 1e-6 && s.varDev < bestS.varDev - 1e-6)
-    ) {
-      best = cand; bestS = s;
-    }
-    if (bestS.maxDev < 1e-3) break; // שוויון כמעט מוחלט
-  }
-  best.forEach((t) => t.players.sort(byRatingDesc));
-  return best.map((t, i) => ({ id: `team-${i + 1}`, name: `קבוצה ${i + 1}`, players: t.players }));
+
+  // 1) איזון קשיח של גדלים עד הפרש ≤ 1
+  strictSizeRebalance(teams, targets);
+
+  // 2) צמצום פערי ממוצעים (ללא שינוי גדלים)
+  const tightened = varianceTighten(teams, 2);
+
+  tightened.forEach((t) => t.players.sort(byRatingDesc));
+  return tightened.map((t, i) => ({ id: `team-${i + 1}`, name: `קבוצה ${i + 1}`, players: t.players }));
 }
 
 /* =================== Rounds store (Admin) =================== */
@@ -312,7 +301,7 @@ function saveRoundToStore({ teams, teamsCount, playersCount }) {
     playersCount,
     teams,
     status: "draft",
-    results: teams.map(() => ({ outcome: "NA", goals: {} })), // outcome: win/draw/loss/NA, goals: {playerId: count}
+    results: teams.map(() => ({ outcome: "NA", goals: {} })),
   };
   let store = [];
   try { store = JSON.parse(localStorage.getItem(LS.ROUNDS) || "[]"); } catch {}
@@ -379,7 +368,6 @@ export default function TeamsPage() {
     return [...alerts];
   }, [teams, userDraggedOnce]);
 
-  /* Actions */
   function makeTeams() {
     const fresh = buildBalancedTeams(players, teamsCount);
     setTeams(fresh);
@@ -387,10 +375,9 @@ export default function TeamsPage() {
     localStorage.setItem(LS.DRAFT, JSON.stringify({ savedAt: new Date().toISOString(), teamsCount, teams: fresh }));
   }
   function saveRound() {
-    // שומר טיוטה + מוסיף למחסן המחזורים
     localStorage.setItem(LS.DRAFT, JSON.stringify({ savedAt: new Date().toISOString(), teamsCount, teams }));
     saveRoundToStore({ teams, teamsCount, playersCount: players.length });
-    alert("המחזור נשמר. פתח/רענן את מסך המנהל – ניתן לערוך בו תוצאות וכובשים.");
+    alert("המחזור נשמר. עבור למסך 'מנהל' → 'פתח מחזור' כדי לעדכן תוצאות וכובשים.");
   }
   function onToggleHide() {
     const next = !hideRatingsInCards;
@@ -533,7 +520,6 @@ export default function TeamsPage() {
               .print-root{padding:0}
               .print-grid{gap:10px;grid-template-columns:1fr 1fr}
               .pcard{page-break-inside:avoid;break-inside:avoid}
-              /* הסתר כל דבר אחר מחוץ ל-print-root */
               body > *:not(.print-backdrop):not(.print-root) { display:none !important }
               .page, .tabs, header, nav, footer { display:none !important }
             }
@@ -651,7 +637,7 @@ export default function TeamsPage() {
         </div>
 
         <div style={{ marginTop: 8, opacity:.7, fontSize:12 }}>
-          יעדי גודל לקבוצות: {targets.join(" / ")} (החלוקה מבטיחה זהה/±1 בלבד).
+          יעדי גודל לקבוצות: {targets.join(" / ")} (החלוקה מבטיחה הפרש גודל של לכל היותר שחקן אחד).
         </div>
       </section>
 
