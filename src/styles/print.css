@@ -1,12 +1,10 @@
-@page{ size:A4 landscape; margin:10mm; }
-@media print{
-  *{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-  html,body{ background:#fff !important; color:#000 !important; }
-  .no-print, .topbar{ display:none !important; }
-  .print-card{
-    border:1px solid #000 !important; border-radius:0 !important; box-shadow:none !important;
-    background:#fff !important; color:#000 !important;
-  }
-  table{ border-collapse:collapse !important; }
-  th,td{ border:1px solid #000 !important; padding:4px 6px !important; }
+/* src/styles/print.css */
+@media print {
+  body { background: #fff !important; color: #000 !important; }
+  .page, .print-page { padding: 0; margin: 0; }
+  .print-title { font-size: 20pt; margin: 8pt 0 12pt; text-align: center; }
+  .print-card { border: 1px solid #000; border-radius: 8pt; padding: 8pt; break-inside: avoid; }
+  .print-list { list-style: none; padding: 0; margin: 0; }
+  .print-list li { display: flex; justify-content: space-between; border-top: 1px solid #ddd; padding: 4pt 0; }
+  .print-list li:first-child { border-top: none; }
 }
