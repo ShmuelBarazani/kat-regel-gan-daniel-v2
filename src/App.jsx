@@ -10,14 +10,14 @@ import AdminPage from "@/pages/Admin";
 
 const TABS = [
   { key: "players", label: "שחקנים", component: PlayersPage },
-  { key: "teammaker", label: "עשה כוחות / מחזור", component: TeamMakerPage },
+  { key: "teammaker", label: "קבוצות", component: TeamMakerPage },
   { key: "ranking", label: "דירוג", component: RankingPage },
   { key: "admin", label: "מנהל", component: AdminPage },
 ];
 
 const TAB_KEY = "katregel.ui.activeTab.v2";
 
-export default function App() {
+export default function App(){
   const [active, setActive] = useState(() => localStorage.getItem(TAB_KEY) || "players");
   useEffect(() => { localStorage.setItem(TAB_KEY, active); }, [active]);
   const ActiveComp = TABS.find(t => t.key === active)?.component ?? PlayersPage;
@@ -34,6 +34,7 @@ export default function App() {
                 className="tab"
                 aria-current={active===t.key ? "page" : undefined}
                 onClick={() => setActive(t.key)}
+                title={t.label}
               >
                 {t.label}
               </button>
