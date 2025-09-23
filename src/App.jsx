@@ -8,31 +8,37 @@ import Admin from "./pages/Admin";
 import "./styles/styles.css";
 import "./styles/print.css";
 
-function Tabs() {
-  const [tab, setTab] = useState("players");
+function Shell() {
+  const [tab, setTab] = useState("teams");
+
   return (
-    <div>
-      <header className="page" dir="rtl">
-        <div className="text-center text-2xl mb-3">קטרגל גן-דניאל ⚽</div>
-        <nav className="flex gap-2 justify-center mb-4 flex-wrap">
-          <button className="btn" onClick={() => setTab("players")}>שחקנים</button>
-          <button className="btn" onClick={() => setTab("teams")}>קבוצות</button>
-          <button className="btn" onClick={() => setTab("ranking")}>דירוג</button>
-          <button className="btn" onClick={() => setTab("admin")}>מנהל</button>
+    <>
+      <header className="page header" dir="rtl">
+        <div className="brand">
+          <span className="logo" aria-hidden></span>
+          <span>קטרגל־גן דניאל</span>
+        </div>
+
+        <nav className="pills">
+          <button className={`btn btn-ghost ${tab==="players"?"pill--active":""}`} onClick={()=>setTab("players")}>שחקנים</button>
+          <button className={`btn btn-ghost ${tab==="teams"?"pill--active":""}`} onClick={()=>setTab("teams")}>כוחות</button>
+          <button className={`btn btn-ghost ${tab==="ranking"?"pill--active":""}`} onClick={()=>setTab("ranking")}>דירוג</button>
+          <button className={`btn btn-ghost ${tab==="admin"?"pill--active":""}`} onClick={()=>setTab("admin")}>מנהל</button>
         </nav>
       </header>
-      {tab === "players" && <Players />}
-      {tab === "teams" && <TeamMaker />}
-      {tab === "ranking" && <Ranking />}
-      {tab === "admin" && <Admin />}
-    </div>
+
+      {tab==="players" && <Players/>}
+      {tab==="teams" && <TeamMaker/>}
+      {tab==="ranking" && <Ranking/>}
+      {tab==="admin" && <Admin/>}
+    </>
   );
 }
 
-export default function App() {
+export default function App(){
   return (
     <AppProvider>
-      <Tabs />
+      <Shell />
     </AppProvider>
   );
 }
