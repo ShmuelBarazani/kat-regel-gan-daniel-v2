@@ -1,6 +1,13 @@
 // src/store/playerStorage.jsx
 import React, { createContext, useContext, useMemo, useReducer } from "react";
-import { loadPlayers, savePlayers, loadCycles, saveCycles, loadSettings, saveSettings } from "../lib/storage";
+import {
+  loadPlayers,
+  savePlayers,
+  loadCycles,
+  saveCycles,
+  loadSettings,
+  saveSettings,
+} from "../lib/storage";
 import seed from "../data/players.json";
 
 // מיפוי דו-כיווני בין הסכמה שלך לסכמה פנימית
@@ -26,13 +33,12 @@ const toExternal = (p) => ({
 const AppCtx = createContext(null);
 
 const initial = () => {
-  const lsPlayers = loadPlayers(); // אם יש LS, הוא בסכמה החיצונית שלך
+  const lsPlayers = loadPlayers();
   const base = lsPlayers && Array.isArray(lsPlayers) ? lsPlayers : seed;
   return {
-    // שומרים פנימית כמבנה נוח לעבודה — אך נשמרים חזרה בסכמה שלך
     players: base.map(toInternal),
-    cycles: loadCycles(),          // [{id,ts,teams:[{id,name,players,sum,avg}],goals:[{playerId,goals}], ...}]
-    settings: loadSettings(),      // { bonus: true|false }
+    cycles: loadCycles(),
+    settings: loadSettings(),
   };
 };
 
@@ -49,7 +55,9 @@ function reducer(state, action) {
       return { ...state, players };
     }
     case "players/update": {
-      const players = state.players.map((p) => (p.id === action.id ? { ...p, ...action.patch } : p));
+      const players = state.players.map((p) =>
+        p.id === action.id ? { ...p, ...action.patch } : p
+      );
       savePlayers(players.map(toExternal));
       return { ...state, players };
     }
@@ -86,7 +94,8 @@ export function AppProvider({ children }) {
       state,
       setPlayers: (players) => dispatch({ type: "players/set", players }),
       addPlayer: (player) => dispatch({ type: "players/add", player }),
-      updatePlayer: (id, patch) => dispatch({ type: "players/update", id, patch }),
+      updatePlayer: (id, patch) =>
+        dispatch({ type: "players/update", id, patch }),
       deletePlayer: (id) => dispatch({ type: "players/delete", id }),
       addCycle: (cycle) => dispatch({ type: "cycles/add", cycle }),
       setCycles: (cycles) => dispatch({ type: "cycles/set", cycles }),
@@ -98,4 +107,8 @@ export function AppProvider({ children }) {
   return <AppCtx.Provider value={api}>{children}</AppCtx.Provider>;
 }
 
+// הקרס המרכזי לשימוש באפליקציה
 export const useApp = () => useContext(AppCtx);
+
+// Alias לשם הישן כדי למנוע שגיאות Build בקבצים קיימים
+export const useAppStore = useApp;
