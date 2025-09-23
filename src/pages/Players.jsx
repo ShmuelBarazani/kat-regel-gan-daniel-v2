@@ -40,10 +40,10 @@ export default function PlayersPage() {
             </tr>
           </thead>
           <tbody>
-            {sortedPlayers.map(p => (
+            {sortedPlayers.map((p) => (
               <tr key={p.id}>
                 <td className="px-2 py-1 text-center">
-                  <input type="checkbox" checked={p.plays} onChange={e => togglePlayerPlays(p.id, e.target.checked)} />
+                  <input type="checkbox" checked={p.plays} onChange={(e) => togglePlayerPlays(p.id, e.target.checked)} />
                 </td>
                 <td className="px-2 py-1">{p.name}</td>
                 <td className="px-2 py-1">{p.pos}</td>
@@ -54,7 +54,7 @@ export default function PlayersPage() {
                   <div className="flex gap-2">
                     <button onClick={() => openEdit(p)} className="px-2 py-1 text-sm rounded-lg border border-[#24324a] hover:bg-white/5">ערוך</button>
                     <button
-                      onClick={() => { if(confirm(`למחוק את ${p.name}?`)) deletePlayer(p.id); }}
+                      onClick={() => { if (confirm(`למחוק את ${p.name}?`)) deletePlayer(p.id); }}
                       className="px-2 py-1 text-sm rounded-lg border border-[#ff5c7a] text-[#ff5c7a] hover:bg-[#ff5c7a]/10"
                     >מחק</button>
                   </div>
