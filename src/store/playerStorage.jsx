@@ -11,8 +11,6 @@ import {
 import seed from "../data/players.json";
 
 /* ---------- מיפוי וסניטציה ---------- */
-
-// סניטציה לפורמט החיצוני (הקיים אצלך ב-players.json וב-LS)
 const sanitizeExternal = (p) => ({
   id: p?.id ?? Date.now(),
   name: String(p?.name ?? ""),
@@ -23,7 +21,6 @@ const sanitizeExternal = (p) => ({
   avoid: Array.isArray(p?.avoid) ? p.avoid.filter(Number.isFinite) : [],
 });
 
-// המרה לפורמט פנימי נוח לעבודה
 const toInternal = (p) => ({
   id: p.id,
   name: p.name,
@@ -34,7 +31,6 @@ const toInternal = (p) => ({
   avoidWith: Array.isArray(p.avoid) ? p.avoid : [],
 });
 
-// המרה חזרה לפורמט שלך (לשמירה ב-LS)
 const toExternal = (p) => ({
   id: p.id,
   name: p.name,
@@ -47,47 +43,17 @@ const toExternal = (p) => ({
 
 const safeArray = (arr) => (Array.isArray(arr) ? arr : []);
 
-/* ---------- Settings/UI ברירת-מחדל ---------- */
+/* ---------- ברירות מחדל ---------- */
+const DEFAULT_SETTINGS = { bonus: true, sortBy: "name", sortDir: "asc" };
+const DEFAULT_UI = { sortBy: "name", sortDir: "asc" };
 
-const DEFAULT_SETTINGS = {
-  bonus: true,
-  sortBy: "name",
-  sortDir: "asc",
-};
-
-const DEFAULT_UI = {
-  sortBy: "name",
-  sortDir: "asc",
-};
-
-/* ---------- Context + Fallback ---------- */
-
+/* ---------- הקשר ---------- */
 const AppCtx = createContext(null);
 
-// Fallback מלא במקרה שמישהו קורא לקרס לפני ה-Provider
-const NOOP = () => {};
-const FALLBACK = {
-  state: {
-    players: [],
-    cycles: [],
-    settings: { ...DEFAULT_SETTINGS },
-    ui: { ...DEFAULT_UI },
-  },
-  setPlayers: NOOP,
-  addPlayer: NOOP,
-  updatePlayer: NOOP,
-  deletePlayer: NOOP,
-  addCycle: NOOP,
-  setCycles: NOOP,
-  setSettings: NOOP,
-  setUI: NOOP,
-};
-
-/* ---------- Initial State ---------- */
-
+/* ---------- initial ---------- */
 const initial = () => {
   try {
-    const lsPlayers = loadPlayers(); // אם יש ב-LS – בפורמט החיצוני שלך
+    const lsPlayers = loadPlayers();
     const baseRaw = lsPlayers && Array.isArray(lsPlayers) ? lsPlayers : seed;
     const base = baseRaw.map(sanitizeExternal);
 
@@ -112,8 +78,7 @@ const initial = () => {
   }
 };
 
-/* ---------- Reducer ---------- */
-
+/* ---------- reducer ---------- */
 function reducer(state, action) {
   switch (action.type) {
     case "players/set": {
@@ -121,13 +86,11 @@ function reducer(state, action) {
       savePlayers(players.map(toExternal));
       return { ...state, players };
     }
-
     case "players/add": {
       const players = [...state.players, action.player];
       savePlayers(players.map(toExternal));
       return { ...state, players };
     }
-
     case "players/update": {
       const players = state.players.map((p) =>
         p.id === action.id ? { ...p, ...action.patch } : p
@@ -135,7 +98,6 @@ function reducer(state, action) {
       savePlayers(players.map(toExternal));
       return { ...state, players };
     }
-
     case "players/delete": {
       const players = state.players.filter((p) => p.id !== action.id);
       savePlayers(players.map(toExternal));
@@ -147,32 +109,25 @@ function reducer(state, action) {
       saveCycles(cycles);
       return { ...state, cycles };
     }
-
     case "cycles/add": {
       const cycles = [...state.cycles, action.cycle];
       saveCycles(cycles);
       return { ...state, cycles };
     }
 
-    // הגדרות — נשמר גם ב-LS וגם מסתנכרן ל-ui
     case "settings/set": {
       const nextSettings = { ...state.settings, ...action.patch };
       saveSettings(nextSettings);
       const nextUI = {
         ...state.ui,
         sortBy:
-          "sortBy" in action.patch
-            ? action.patch.sortBy
-            : state.ui.sortBy ?? DEFAULT_UI.sortBy,
+          "sortBy" in action.patch ? action.patch.sortBy : state.ui.sortBy ?? DEFAULT_UI.sortBy,
         sortDir:
-          "sortDir" in action.patch
-            ? action.patch.sortDir
-            : state.ui.sortDir ?? DEFAULT_UI.sortDir,
+          "sortDir" in action.patch ? action.patch.sortDir : state.ui.sortDir ?? DEFAULT_UI.sortDir,
       };
       return { ...state, settings: nextSettings, ui: nextUI };
     }
 
-    // במידה ורכיב ישן מעדכן UI ישירות
     case "ui/set": {
       const ui = { ...state.ui, ...action.patch };
       const settings = {
@@ -189,26 +144,19 @@ function reducer(state, action) {
   }
 }
 
-/* ---------- Provider + API ---------- */
-
+/* ---------- Provider ---------- */
 export function AppProvider({ children }) {
   const [state, dispatch] = useReducer(reducer, undefined, initial);
 
   const api = useMemo(
     () => ({
       state,
-      // players
       setPlayers: (players) => dispatch({ type: "players/set", players }),
       addPlayer: (player) => dispatch({ type: "players/add", player }),
-      updatePlayer: (id, patch) =>
-        dispatch({ type: "players/update", id, patch }),
+      updatePlayer: (id, patch) => dispatch({ type: "players/update", id, patch }),
       deletePlayer: (id) => dispatch({ type: "players/delete", id }),
-
-      // cycles
       addCycle: (cycle) => dispatch({ type: "cycles/add", cycle }),
       setCycles: (cycles) => dispatch({ type: "cycles/set", cycles }),
-
-      // settings/ui
       setSettings: (patch) => dispatch({ type: "settings/set", patch }),
       setUI: (patch) => dispatch({ type: "ui/set", patch }),
     }),
@@ -218,13 +166,43 @@ export function AppProvider({ children }) {
   return <AppCtx.Provider value={api}>{children}</AppCtx.Provider>;
 }
 
-/* ---------- Hooks ---------- */
-
+/* ---------- Hook עם מבנה מוגן ---------- */
 export const useApp = () => {
   const ctx = useContext(AppCtx);
-  // אם בטעות נקרא מחוץ ל-Provider – מחזיר Fallback כדי לא לקרוס
-  return ctx ?? FALLBACK;
+
+  // אם אין Provider / או ctx פגום — בונים אובייקט בטוח עם כל השדות הדרושים
+  if (!ctx || !ctx.state) {
+    return {
+      state: {
+        players: [],
+        cycles: [],
+        settings: { ...DEFAULT_SETTINGS },
+        ui: { ...DEFAULT_UI },
+      },
+      setPlayers: () => {},
+      addPlayer: () => {},
+      updatePlayer: () => {},
+      deletePlayer: () => {},
+      addCycle: () => {},
+      setCycles: () => {},
+      setSettings: () => {},
+      setUI: () => {},
+    };
+  }
+
+  // אם יש ctx אבל חסרים בו שדות — משלים אותם כדי למנוע undefined.sortBy
+  const safeSettings = { ...DEFAULT_SETTINGS, ...(ctx.state.settings || {}) };
+  const safeUI = { ...DEFAULT_UI, ...(ctx.state.ui || {}) };
+
+  return {
+    ...ctx,
+    state: {
+      ...ctx.state,
+      settings: safeSettings,
+      ui: safeUI,
+    },
+  };
 };
 
-// Alias לשם הישן כדי למנוע שבירה בקבצים קיימים
+// alias לשם הישן
 export const useAppStore = useApp;
