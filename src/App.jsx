@@ -1,48 +1,38 @@
 // src/App.jsx
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
+import { AppProvider } from "./store/playerStorage";
+import Players from "./pages/Players";
+import TeamMaker from "./pages/TeamMaker";
+import Ranking from "./pages/Ranking";
+import Admin from "./pages/Admin";
 import "./styles/styles.css";
 import "./styles/print.css";
 
-import PlayersPage from "@/pages/Players";
-import TeamMakerPage from "@/pages/TeamMaker";
-import RankingPage from "@/pages/Ranking";
-import AdminPage from "@/pages/Admin";
-
-const TABS = [
-  { key: "players", label: "שחקנים", component: PlayersPage },
-  { key: "teammaker", label: "קבוצות", component: TeamMakerPage },
-  { key: "ranking", label: "דירוג", component: RankingPage },
-  { key: "admin", label: "מנהל", component: AdminPage },
-];
-
-const TAB_KEY = "katregel.ui.activeTab.v2";
-
-export default function App(){
-  const [active, setActive] = useState(() => localStorage.getItem(TAB_KEY) || "players");
-  useEffect(() => { localStorage.setItem(TAB_KEY, active); }, [active]);
-  const ActiveComp = TABS.find(t => t.key === active)?.component ?? PlayersPage;
-
+function Tabs() {
+  const [tab, setTab] = useState("players");
   return (
-    <div dir="rtl">
-      <header className="topbar">
-        <div className="page flex items-center justify-between gap-3 py-3">
-          <div className="app-title select-none">קטרגל גן־דניאל ⚽</div>
-          <nav className="flex items-center gap-1 no-print" aria-label="ראשי">
-            {TABS.map(t => (
-              <button
-                key={t.key}
-                className="tab"
-                aria-current={active===t.key ? "page" : undefined}
-                onClick={() => setActive(t.key)}
-                title={t.label}
-              >
-                {t.label}
-              </button>
-            ))}
-          </nav>
-        </div>
+    <div>
+      <header className="page" dir="rtl">
+        <div className="text-center text-2xl mb-3">קטרגל גן-דניאל ⚽</div>
+        <nav className="flex gap-2 justify-center mb-4 flex-wrap">
+          <button className="btn" onClick={() => setTab("players")}>שחקנים</button>
+          <button className="btn" onClick={() => setTab("teams")}>קבוצות</button>
+          <button className="btn" onClick={() => setTab("ranking")}>דירוג</button>
+          <button className="btn" onClick={() => setTab("admin")}>מנהל</button>
+        </nav>
       </header>
-      <main className="page"><ActiveComp /></main>
+      {tab === "players" && <Players />}
+      {tab === "teams" && <TeamMaker />}
+      {tab === "ranking" && <Ranking />}
+      {tab === "admin" && <Admin />}
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <AppProvider>
+      <Tabs />
+    </AppProvider>
   );
 }
