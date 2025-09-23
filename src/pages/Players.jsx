@@ -1,7 +1,9 @@
 // src/pages/Players.jsx
 import React, { useMemo, useState } from "react";
-import { useAppStore as useApp } from "@/store/playerStorage.jsx"; // נשאר תואם ליבוא הישן
-import PlayerFormModal from "@/components/PlayerFormModal.jsx";
+// אם יש לך alias '@', אפשר להחזיר ל "@/store/playerStorage.jsx"
+// הגרסה היחסית הזו עובדת בכל מקרה:
+import { useAppStore as useApp } from "../store/playerStorage.jsx";
+import PlayerFormModal from "../components/PlayerFormModal.jsx";
 
 const DEFAULT_SORT_BY = "name";
 const DEFAULT_SORT_DIR = "asc";
@@ -9,14 +11,14 @@ const DEFAULT_SORT_DIR = "asc";
 export default function Players() {
   const { state, updatePlayer, deletePlayer } = useApp();
 
-  // ברירות מחדל קשיחות במקרה ש-state/settings טרם זמינים מסיבה כלשהי
-  const safeSettings = {
-    sortBy: (state && state.settings && state.settings.sortBy) || DEFAULT_SORT_BY,
-    sortDir: (state && state.settings && state.settings.sortDir) || DEFAULT_SORT_DIR,
-  };
+  // ברירות מחדל קשיחות כדי לא לקרוס אם settings עוד לא מוכנים
+  const safeSortBy =
+    (state && state.settings && state.settings.sortBy) || DEFAULT_SORT_BY;
+  const safeSortDir =
+    (state && state.settings && state.settings.sortDir) || DEFAULT_SORT_DIR;
 
-  const [sortKey, setSortKey] = useState(safeSettings.sortBy);
-  const [sortDir, setSortDir] = useState(safeSettings.sortDir);
+  const [sortKey, setSortKey] = useState(safeSortBy);
+  const [sortDir, setSortDir] = useState(safeSortDir);
   const [modalOpen, setModalOpen] = useState(false);
   const [editId, setEditId] = useState(null);
 
@@ -27,20 +29,40 @@ export default function Players() {
 
   const sorted = useMemo(() => {
     const dir = sortDir === "asc" ? 1 : -1;
-    const accessor = (p) => {
-      if (sortKey === "prefer" || sortKey === "avoid" || sortKey === "mustWith" || sortKey === "avoidWith") {
-        const arr =
-          p.prefer ?? p.mustWith ?? [] || [];
-        // אם יש גם avoid/avoidWith
-        const arr2 = p.avoid ?? p.avoidWith ?? [];
-        return (Array.isArray(arr) ? arr.length : 0) + (Array.isArray(arr2) ? arr2.length : 0) / 1000;
-      }
-      // התאמות לשדות שלך: name/pos/r/selected
-      if (sortKey === "r" || sortKey === "rating") return p.r ?? p.rating ?? 0;
-      if (sortKey === "selected" || sortKey === "active") return p.selected ? 1 : 0;
-      return (p[sortKey] ?? "").toString();
-    };
     const list = Array.isArray(state?.players) ? state.players : [];
+
+    const accessor = (p) => {
+      // מיון לפי "חייב עם/לא עם" – נספר אורכים (תומך גם בשדות הפנימיים אם קיימים)
+      if (
+        sortKey === "prefer" ||
+        sortKey === "avoid" ||
+        sortKey === "mustWith" ||
+        sortKey === "avoidWith"
+      ) {
+        const arr1 = Array.isArray(p.prefer)
+          ? p.prefer
+          : Array.isArray(p.mustWith)
+          ? p.mustWith
+          : [];
+        const arr2 = Array.isArray(p.avoid)
+          ? p.avoid
+          : Array.isArray(p.avoidWith)
+          ? p.avoidWith
+          : [];
+        // עדיפות לאורך prefer; הוספת "שבר" קטן מ-avoid למניעת שוויון
+        return arr1.length + arr2.length / 1000;
+      }
+
+      // שדות ציונים/בוליאני/טקסט
+      if (sortKey === "r" || sortKey === "rating") return p.r ?? p.rating ?? 0;
+      if (sortKey === "selected" || sortKey === "active")
+        return p.selected ? 1 : 0;
+
+      const v = p[sortKey];
+      // מספרים נשמרים כמספרים, טקסטים כמחרוזות
+      return typeof v === "number" ? v : (v ?? "").toString();
+    };
+
     return [...list].sort((a, b) => {
       const av = accessor(a);
       const bv = accessor(b);
@@ -55,7 +77,7 @@ export default function Players() {
     setModalOpen(true);
   };
 
-  // אם משום מה state לא קיים עדיין — מציגים שלד במקום קריסה
+  // שלד טעינה בטוח במקום קריסה
   if (!state) {
     return (
       <div className="page" dir="rtl">
@@ -68,7 +90,13 @@ export default function Players() {
     <div className="page" dir="rtl">
       <div className="flex items-center justify-between mb-3">
         <h1 className="title">שחקנים</h1>
-        <button className="btn btn-primary" onClick={() => { setEditId(null); setModalOpen(true); }}>
+        <button
+          className="btn btn-primary"
+          onClick={() => {
+            setEditId(null);
+            setModalOpen(true);
+          }}
+        >
           הוסף שחקן
         </button>
       </div>
@@ -104,10 +132,23 @@ export default function Players() {
                   <input
                     type="checkbox"
                     checked={!!p.selected}
-                    onChange={(e) => updatePlayer?.(p.id, { active: e.target.checked, selected: e.target.checked })}
+                    onChange={(e) =>
+                      updatePlayer?.(p.id, {
+                        active: e.target.checked,
+                        selected: e.target.checked,
+                      })
+                    }
                   />
                 </td>
-                <td contentEditable suppressContentEditableWarning onBlur={(e) => updatePlayer?.(p.id, { name: e.currentTarget.textContent.trim() })}>
+                <td
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) =>
+                    updatePlayer?.(p.id, {
+                      name: e.currentTarget.textContent.trim(),
+                    })
+                  }
+                >
                   {p.name}
                 </td>
                 <td>
@@ -116,7 +157,10 @@ export default function Players() {
                     value={p.pos}
                     onChange={(e) => updatePlayer?.(p.id, { pos: e.target.value })}
                   >
-                    <option>GK</option><option>DF</option><option>MF</option><option>FW</option>
+                    <option>GK</option>
+                    <option>DF</option>
+                    <option>MF</option>
+                    <option>FW</option>
                   </select>
                 </td>
                 <td>
@@ -125,17 +169,26 @@ export default function Players() {
                     type="number"
                     step="0.5"
                     value={p.r ?? 0}
-                    onChange={(e) => updatePlayer?.(p.id, { rating: +e.target.value, r: +e.target.value })}
+                    onChange={(e) =>
+                      updatePlayer?.(p.id, {
+                        rating: +e.target.value,
+                        r: +e.target.value,
+                      })
+                    }
                   />
                 </td>
-                <td>
-                  {/* הצגה בלבד כדי לא לשנות את ה־UX שלך; אם יש לך רכיב בחירה – תשאיר אותו */}
-                  {Array.isArray(p.prefer) ? p.prefer.length : 0}
-                </td>
+                <td>{Array.isArray(p.prefer) ? p.prefer.length : 0}</td>
                 <td>{Array.isArray(p.avoid) ? p.avoid.length : 0}</td>
                 <td className="whitespace-nowrap">
-                  <button className="btn" onClick={() => edit(p.id)}>ערוך</button>
-                  <button className="btn btn-danger ml-2" onClick={() => deletePlayer?.(p.id)}>מחק</button>
+                  <button className="btn" onClick={() => edit(p.id)}>
+                    ערוך
+                  </button>
+                  <button
+                    className="btn btn-danger ml-2"
+                    onClick={() => deletePlayer?.(p.id)}
+                  >
+                    מחק
+                  </button>
                 </td>
               </tr>
             ))}
@@ -143,7 +196,11 @@ export default function Players() {
         </table>
       </div>
 
-      <PlayerFormModal open={modalOpen} onClose={() => setModalOpen(false)} editId={editId} />
+      <PlayerFormModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        editId={editId}
+      />
     </div>
   );
 }
