@@ -10,18 +10,20 @@ import {
 } from "../lib/storage";
 import seed from "../data/players.json";
 
-// סניטציה בטוחה לאובייקט שחקן חיצוני (הפורמט שלך)
+/* ---------- מיפוי וסניטציה ---------- */
+
+// סניטציה לפורמט החיצוני (הקיים אצלך ב-players.json וב-LS)
 const sanitizeExternal = (p) => ({
   id: p?.id ?? Date.now(),
   name: String(p?.name ?? ""),
   r: Number.isFinite(+p?.r) ? +p.r : 0,
-  pos: ["GK","DF","MF","FW"].includes(p?.pos) ? p.pos : "MF",
+  pos: ["GK", "DF", "MF", "FW"].includes(p?.pos) ? p.pos : "MF",
   selected: !!p?.selected,
   prefer: Array.isArray(p?.prefer) ? p.prefer.filter(Number.isFinite) : [],
   avoid: Array.isArray(p?.avoid) ? p.avoid.filter(Number.isFinite) : [],
 });
 
-// מיפוי דו-כיווני בין הסכמה שלך לסכמה פנימית
+// המרה לפורמט פנימי נוח לעבודה
 const toInternal = (p) => ({
   id: p.id,
   name: p.name,
@@ -31,6 +33,8 @@ const toInternal = (p) => ({
   mustWith: Array.isArray(p.prefer) ? p.prefer : [],
   avoidWith: Array.isArray(p.avoid) ? p.avoid : [],
 });
+
+// המרה חזרה לפורמט שלך (לשמירה ב-LS)
 const toExternal = (p) => ({
   id: p.id,
   name: p.name,
@@ -41,32 +45,57 @@ const toExternal = (p) => ({
   avoid: Array.isArray(p.avoidWith) ? p.avoidWith : [],
 });
 
+const safeArray = (arr) => (Array.isArray(arr) ? arr : []);
+
+/* ---------- Settings/UI ברירת-מחדל ---------- */
+
+const DEFAULT_SETTINGS = {
+  bonus: true,
+  // כדי לכסות רכיבים ישנים שצורכים settings.sortBy/sortDir:
+  sortBy: "name",
+  sortDir: "asc",
+};
+
+const DEFAULT_UI = {
+  // כדי לכסות רכיבים אחרים שצורכים ui.sortBy/ui.sortDir:
+  sortBy: "name",
+  sortDir: "asc",
+};
+
+/* ---------- Context ---------- */
+
 const AppCtx = createContext(null);
 
-const safeArray = (arr) => (Array.isArray(arr) ? arr : []);
+/* ---------- Initial State ---------- */
 
 const initial = () => {
   try {
-    // נסיון טעינה מ-LS בפורמט החיצוני שלך
-    const lsPlayers = loadPlayers();
+    const lsPlayers = loadPlayers(); // אם יש ב-LS – בפורמט החיצוני שלך
     const baseRaw = lsPlayers && Array.isArray(lsPlayers) ? lsPlayers : seed;
     const base = baseRaw.map(sanitizeExternal);
+
+    const loadedSettings = loadSettings() ?? {};
+    const settings = { ...DEFAULT_SETTINGS, ...(loadedSettings || {}) };
 
     return {
       players: base.map(toInternal),
       cycles: safeArray(loadCycles()),
-      settings: loadSettings() ?? { bonus: true },
+      settings,
+      ui: { ...DEFAULT_UI, sortBy: settings.sortBy, sortDir: settings.sortDir },
     };
   } catch (e) {
-    console.error("[initial state] failed, falling back to seed", e);
+    console.error("[initial state] fallback to seed", e);
     const base = safeArray(seed).map(sanitizeExternal);
     return {
       players: base.map(toInternal),
       cycles: [],
-      settings: { bonus: true },
+      settings: { ...DEFAULT_SETTINGS },
+      ui: { ...DEFAULT_UI },
     };
   }
 };
+
+/* ---------- Reducer ---------- */
 
 function reducer(state, action) {
   switch (action.type) {
@@ -98,43 +127,4 @@ function reducer(state, action) {
       return { ...state, cycles };
     }
     case "cycles/add": {
-      const cycles = [...state.cycles, action.cycle];
-      saveCycles(cycles);
-      return { ...state, cycles };
-    }
-    case "settings/set": {
-      const settings = { ...state.settings, ...action.patch };
-      saveSettings(settings);
-      return { ...state, settings };
-    }
-    default:
-      return state;
-  }
-}
-
-export function AppProvider({ children }) {
-  const [state, dispatch] = useReducer(reducer, undefined, initial);
-
-  const api = useMemo(
-    () => ({
-      state,
-      setPlayers: (players) => dispatch({ type: "players/set", players }),
-      addPlayer: (player) => dispatch({ type: "players/add", player }),
-      updatePlayer: (id, patch) =>
-        dispatch({ type: "players/update", id, patch }),
-      deletePlayer: (id) => dispatch({ type: "players/delete", id }),
-      addCycle: (cycle) => dispatch({ type: "cycles/add", cycle }),
-      setCycles: (cycles) => dispatch({ type: "cycles/set", cycles }),
-      setSettings: (patch) => dispatch({ type: "settings/set", patch }),
-    }),
-    [state]
-  );
-
-  return <AppCtx.Provider value={api}>{children}</AppCtx.Provider>;
-}
-
-// הקרס המרכזי לשימוש באפליקציה
-export const useApp = () => useContext(AppCtx);
-
-// Alias לשם הישן כדי למנוע שבירה בקבצים קיימים
-export const useAppStore = useApp;
+      const cycles = [...stat]()
