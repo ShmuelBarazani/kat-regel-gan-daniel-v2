@@ -104,11 +104,13 @@ function reducer(state, action) {
       savePlayers(players.map(toExternal));
       return { ...state, players };
     }
+
     case "players/add": {
       const players = [...state.players, action.player];
       savePlayers(players.map(toExternal));
       return { ...state, players };
     }
+
     case "players/update": {
       const players = state.players.map((p) =>
         p.id === action.id ? { ...p, ...action.patch } : p
@@ -116,15 +118,94 @@ function reducer(state, action) {
       savePlayers(players.map(toExternal));
       return { ...state, players };
     }
+
     case "players/delete": {
       const players = state.players.filter((p) => p.id !== action.id);
       savePlayers(players.map(toExternal));
       return { ...state, players };
     }
+
     case "cycles/set": {
       const cycles = safeArray(action.cycles);
       saveCycles(cycles);
       return { ...state, cycles };
     }
+
     case "cycles/add": {
-      const cycles = [...stat]()
+      const cycles = [...state.cycles, action.cycle];
+      saveCycles(cycles);
+      return { ...state, cycles };
+    }
+
+    // הגדרות — נשמר גם ב-LS וגם מסתנכרן ל-ui
+    case "settings/set": {
+      const nextSettings = { ...state.settings, ...action.patch };
+      // שמירה
+      saveSettings(nextSettings);
+      // סנכרון שדות מיון ל-ui עבור תאימות לאחור
+      const nextUI = {
+        ...state.ui,
+        sortBy:
+          "sortBy" in action.patch
+            ? action.patch.sortBy
+            : state.ui.sortBy ?? DEFAULT_UI.sortBy,
+        sortDir:
+          "sortDir" in action.patch
+            ? action.patch.sortDir
+            : state.ui.sortDir ?? DEFAULT_UI.sortDir,
+      };
+      return { ...state, settings: nextSettings, ui: nextUI };
+    }
+
+    // תמיכה גם בפעולה מפורשת על ui (אם יש רכיבים ישנים שמעדכנים אותה)
+    case "ui/set": {
+      const ui = { ...state.ui, ...action.patch };
+      // משקף גם ל-settings לשמירת תאימות
+      const settings = {
+        ...state.settings,
+        sortBy: ui.sortBy ?? state.settings.sortBy ?? DEFAULT_SETTINGS.sortBy,
+        sortDir: ui.sortDir ?? state.settings.sortDir ?? DEFAULT_SETTINGS.sortDir,
+      };
+      saveSettings(settings);
+      return { ...state, ui, settings };
+    }
+
+    default:
+      return state;
+  }
+}
+
+/* ---------- Provider + API ---------- */
+
+export function AppProvider({ children }) {
+  const [state, dispatch] = useReducer(reducer, undefined, initial);
+
+  const api = useMemo(
+    () => ({
+      state,
+      // players
+      setPlayers: (players) => dispatch({ type: "players/set", players }),
+      addPlayer: (player) => dispatch({ type: "players/add", player }),
+      updatePlayer: (id, patch) =>
+        dispatch({ type: "players/update", id, patch }),
+      deletePlayer: (id) => dispatch({ type: "players/delete", id }),
+
+      // cycles
+      addCycle: (cycle) => dispatch({ type: "cycles/add", cycle }),
+      setCycles: (cycles) => dispatch({ type: "cycles/set", cycles }),
+
+      // settings/ui
+      setSettings: (patch) => dispatch({ type: "settings/set", patch }),
+      setUI: (patch) => dispatch({ type: "ui/set", patch }),
+    }),
+    [state]
+  );
+
+  return <AppCtx.Provider value={api}>{children}</AppCtx.Provider>;
+}
+
+// הקרס המרכזי לשימוש באפליקציה
+export const useApp = () => useContext(AppCtx);
+
+// Alias לשם הישן כדי למנוע שבירה בקבצים קיימים
+export const useAppStore = useApp;
