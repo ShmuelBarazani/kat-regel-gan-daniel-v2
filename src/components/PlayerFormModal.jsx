@@ -1,155 +1,107 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+// src/components/PlayerFormModal.jsx
+// מודאל תקין (לא "מסך שחור"), כולל סגירה ב-ESC. עובד ישירות מול הסכמה הפנימית שלנו.
+// *נשאר כאן למקרה שתרצה כן לערוך/להוסיף שחקנים דרך מודאל; אם אין צורך - אפשר להשאיר מבלי לקרוא לו.
+import React, { useEffect, useMemo, useState } from "react";
+import { useApp } from "../store/playerStorage";
 
-export default function PlayerFormModal({
-  open,
-  onClose,
-  onSubmit,
-  initial,
-  existingPlayers = [],
-}) {
-  const [name, setName] = useState(initial?.name ?? "");
-  const [pos, setPos] = useState(initial?.pos ?? "MF");
-  const [rating, setRating] = useState(
-    typeof initial?.rating === "number" ? String(initial.rating) : "5"
-  );
-  const [plays, setPlays] = useState(initial?.plays ?? true);
-  const [mustWith, setMustWith] = useState(initial?.mustWith ?? []);
-  const [avoidWith, setAvoidWith] = useState(initial?.avoidWith ?? []);
-  const firstInputRef = useRef(null);
+export default function PlayerFormModal({ open, onClose, editId }) {
+  const { state, addPlayer, updatePlayer } = useApp();
+  const edit = useMemo(() => state.players.find((p) => p.id === editId), [state.players, editId]);
+
+  const [name, setName] = useState("");
+  const [pos, setPos] = useState("MF");
+  const [rating, setRating] = useState(5);
+  const [mustWith, setMustWith] = useState([]);
+  const [avoidWith, setAvoidWith] = useState([]);
+  const [active, setActive] = useState(true);
 
   useEffect(() => {
-    setName(initial?.name ?? "");
-    setPos(initial?.pos ?? "MF");
-    setRating(typeof initial?.rating === "number" ? String(initial.rating) : "5");
-    setPlays(initial?.plays ?? true);
-    setMustWith(Array.isArray(initial?.mustWith) ? initial.mustWith : []);
-    setAvoidWith(Array.isArray(initial?.avoidWith) ? initial.avoidWith : []);
-  }, [initial, open]);
+    if (edit) {
+      setName(edit.name || "");
+      setPos(edit.pos || "MF");
+      setRating(edit.rating ?? 5);
+      setMustWith(edit.mustWith || []);
+      setAvoidWith(edit.avoidWith || []);
+      setActive(!!edit.active);
+    } else {
+      setName("");
+      setPos("MF");
+      setRating(5);
+      setMustWith([]);
+      setAvoidWith([]);
+      setActive(true);
+    }
+  }, [edit, open]);
 
   useEffect(() => {
-    if (open) setTimeout(() => firstInputRef.current?.focus(), 0);
-  }, [open]);
+    const onEsc = (e) => {
+      if (e.key === "Escape" && open) onClose?.();
+    };
+    window.addEventListener("keydown", onEsc);
+    return () => window.removeEventListener("keydown", onEsc);
+  }, [open, onClose]);
+
+  const allPlayers = state.players;
+
+  const save = () => {
+    const payload = {
+      id: edit?.id || Date.now(),
+      name,
+      pos,
+      rating: +rating,
+      mustWith,
+      avoidWith,
+      active,
+    };
+    if (edit) updatePlayer(edit.id, payload);
+    else addPlayer(payload);
+    onClose?.();
+  };
 
   if (!open) return null;
 
-  const options = useMemo(() => {
-    const base = Array.isArray(existingPlayers) ? existingPlayers : [];
-    const cur = (initial?.name ?? "").trim();
-    return base
-      .map((p) => (typeof p === "string" ? p : p?.name))
-      .filter(Boolean)
-      .map((s) => String(s))
-      .filter((n) => n.trim() && n.trim() !== cur)
-      .sort((a, b) => a.localeCompare(b, "he"));
-  }, [existingPlayers, initial]);
-
-  const handleSubmit = (e) => {
-    e?.preventDefault?.();
-    const r = Number(rating);
-    const trimmed = name.trim();
-    if (!trimmed) return alert("נא להזין שם שחקן.");
-    if (r < 0 || r > 10 || Number.isNaN(r)) return alert("ציון חייב להיות בין 0 ל־10.");
-
-    const player = {
-      id: initial?.id ?? crypto.randomUUID(),
-      name: trimmed,
-      pos,
-      rating: r,
-      plays,
-      mustWith: mustWith,
-      avoidWith: avoidWith,
-    };
-    onSubmit?.(player);
-  };
-
-  const onMultiChange = (setter) => (e) => {
-    const selected = Array.from(e.target.selectedOptions).map((o) => o.value);
-    setter(selected);
-  };
-
   return (
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center" role="dialog" aria-modal="true">
-      <div
-        className="absolute inset-0 bg-black/60"
-        onClick={onClose}
-      />
-      <form
-        onSubmit={handleSubmit}
-        className="relative w-[min(680px,96vw)] rounded-2xl bg-[#0f1a2e] text-[#e8eefc] shadow-2xl p-5 border border-[#24324a]"
-        dir="rtl"
-      >
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-xl">הוספת/עריכת שחקן</h2>
-          <button type="button" onClick={onClose} className="px-3 py-1 rounded-xl border border-[#24324a] hover:bg-white/5">✕</button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="relative w-[min(96vw,560px)] max-h-[90vh] overflow-auto rounded-2xl bg-white text-gray-900 p-5 shadow-xl" dir="rtl">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-medium">{edit ? "עריכת שחקן" : "הוספת שחקן"}</h2>
+          <button className="px-3 py-1 rounded-md bg-gray-200 hover:bg-gray-300" onClick={onClose}>סגור</button>
         </div>
 
-        <div className="grid grid-cols-12 gap-3">
-          <div className="col-span-12">
-            <label className="block text-sm mb-1">שם</label>
-            <input
-              ref={firstInputRef}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full rounded-xl bg-[#0b1220] border border-[#24324a] px-3 py-2 outline-none focus:ring-2 focus:ring-[#2575fc]"
-              placeholder=""
-            />
-          </div>
-
-          <div className="col-span-6">
-            <label className="block text-sm mb-1">עמדה</label>
-            <select
-              value={pos}
-              onChange={(e) => setPos(e.target.value)}
-              className="w-full rounded-xl bg-[#0b1220] border border-[#24324a] px-3 py-2 outline-none focus:ring-2 focus:ring-[#2575fc]"
-            >
-              <option value="GK">GK — שוער</option>
-              <option value="DF">DF — הגנה</option>
-              <option value="MF">MF — קישור</option>
-              <option value="FW">FW — התקפה</option>
+        <div className="grid gap-3">
+          <label className="grid gap-1">שם<input className="input" value={name} onChange={(e) => setName(e.target.value)} /></label>
+          <label className="grid gap-1">עמדה
+            <select className="input" value={pos} onChange={(e) => setPos(e.target.value)}>
+              <option>GK</option><option>DF</option><option>MF</option><option>FW</option>
             </select>
-          </div>
-
-          <div className="col-span-6">
-            <label className="block text-sm mb-1">ציון (0–10)</label>
-            <input
-              type="number"
-              inputMode="decimal"
-              step="0.5"
-              min={0}
-              max={10}
-              value={rating}
-              onChange={(e) => setRating(e.target.value)}
-              className="w-full rounded-xl bg-[#0b1220] border border-[#24324a] px-3 py-2 outline-none focus:ring-2 focus:ring-[#2575fc]"
-            />
-          </div>
-
-          <div className="col-span-12 flex items-center gap-2 mt-1">
-            <input id="plays" type="checkbox" checked={plays} onChange={(e) => setPlays(e.target.checked)} className="h-4 w-4" />
-            <label htmlFor="plays" className="text-sm select-none">משחק במחזור</label>
-          </div>
-
-          <div className="col-span-6">
-            <label className="block text-sm mb-1">חייב לשחק עם</label>
-            <select multiple size={6} value={mustWith} onChange={onMultiChange(setMustWith)}
-              className="w-full rounded-xl bg-[#0b1220] border border-[#24324a] px-3 py-2 outline-none focus:ring-2 focus:ring-[#2575fc]">
-              {options.map((n) => <option key={n} value={n}>{n}</option>)}
-            </select>
-          </div>
-
-          <div className="col-span-6">
-            <label className="block text-sm mb-1">לא משחק עם</label>
-            <select multiple size={6} value={avoidWith} onChange={onMultiChange(setAvoidWith)}
-              className="w-full rounded-xl bg-[#0b1220] border border-[#24324a] px-3 py-2 outline-none focus:ring-2 focus:ring-[#2575fc]">
-              {options.map((n) => <option key={n} value={n}>{n}</option>)}
-            </select>
-          </div>
+          </label>
+          <label className="grid gap-1">ציון<input className="input" type="number" step="0.5" min="0" max="10" value={rating} onChange={(e) => setRating(e.target.value)} /></label>
+          <label className="grid gap-1">חייב עם<MultiSelect value={mustWith} setValue={setMustWith} options={allPlayers} excludeId={edit?.id} /></label>
+          <label className="grid gap-1">לא עם<MultiSelect value={avoidWith} setValue={setAvoidWith} options={allPlayers} excludeId={edit?.id} /></label>
+          <label className="inline-flex items-center gap-2 mt-2"><input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} /> משחק?</label>
         </div>
 
-        <div className="mt-5 flex items-center justify-between gap-2">
-          <button type="button" onClick={onClose} className="px-4 py-2 rounded-xl border border-[#24324a] hover:bg-white/5">ביטול</button>
-          <button type="submit" className="px-4 py-2 rounded-xl bg-[#27c463] hover:opacity-90 text-[#0b1220] font-medium">שמירה</button>
+        <div className="flex justify-end gap-2 mt-5">
+          <button className="btn" onClick={onClose}>ביטול</button>
+          <button className="btn btn-primary" onClick={save}>שמירה</button>
         </div>
-      </form>
+      </div>
+    </div>
+  );
+}
+
+function MultiSelect({ value, setValue, options, excludeId }) {
+  const selectable = options.filter((o) => o.id !== excludeId);
+  const toggle = (id) => setValue(value.includes(id) ? value.filter((x) => x !== id) : [...value, id]);
+  return (
+    <div className="border rounded p-2 max-h-32 overflow-auto bg-white text-gray-800">
+      {selectable.map((o) => (
+        <label key={o.id} className="flex items-center gap-2 py-0.5">
+          <input type="checkbox" checked={value.includes(o.id)} onChange={() => toggle(o.id)} />
+          <span>{o.name}</span>
+        </label>
+      ))}
     </div>
   );
 }
