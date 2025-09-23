@@ -1,13 +1,11 @@
-/* הדפסה: A4 נוף, מסגרות שחורות, ללא צבעי רקע */
 @page{ size:A4 landscape; margin:10mm; }
 @media print{
   *{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-  body{ background:#fff !important; color:#000 !important; }
-  .no-print{ display:none !important; }
-
+  html,body{ background:#fff !important; color:#000 !important; }
+  .no-print, .topbar{ display:none !important; }
   .print-card{
-    border:1px solid #000 !important; border-radius:0 !important;
-    box-shadow:none !important; background:#fff !important; color:#000 !important;
+    border:1px solid #000 !important; border-radius:0 !important; box-shadow:none !important;
+    background:#fff !important; color:#000 !important;
   }
   table{ border-collapse:collapse !important; }
   th,td{ border:1px solid #000 !important; padding:4px 6px !important; }
