@@ -2,21 +2,20 @@
 import React, { useMemo, useState } from "react";
 import { useAppStore } from "@/store/playerStorage.jsx";
 import { computeTeamStats, isBalanced } from "@/logic/balance";
+import PrintPreview from "@/components/PrintPreview";
 
 export default function TeamMakerPage() {
   const {
-    players, current, setTeams, movePlayer, toggleShowRatings, createFixturesFromTeams
+    players, current, setTeams, movePlayer, toggleShowRatings,
+    createFixturesFromTeams, saveSnapshot
   } = useAppStore();
 
   const [teamsCount, setTeamsCount] = useState(current.teams.length || 4);
+  const [showPrint, setShowPrint] = useState(false);
 
-  const availablePlayers = useMemo(
-    () => players.filter(p => p.plays),
-    [players]
-  );
-
-  const assignedIds = new Set(current.teams.flatMap(t => t.playerIds));
-  const unassigned = availablePlayers.filter(p => !assignedIds.has(p.id));
+  const availablePlayers = useMemo(() => players.filter((p) => p.plays), [players]);
+  const assignedIds = new Set(current.teams.flatMap((t) => t.playerIds));
+  const unassigned = availablePlayers.filter((p) => !assignedIds.has(p.id));
 
   const totals = {
     total: availablePlayers.length,
@@ -27,7 +26,6 @@ export default function TeamMakerPage() {
   const teamStats = useMemo(() => computeTeamStats(current.teams, players), [current.teams, players]);
   const balanced = useMemo(() => isBalanced(current.teams), [current.teams]);
 
-  // שינוי מספר קבוצות
   const handleChangeTeamsCount = (n) => {
     const num = Number(n);
     setTeamsCount(num);
@@ -38,27 +36,31 @@ export default function TeamMakerPage() {
       playerIds: [],
       showRatings: true,
     });
-    // אם הקטנו את הכמות – נפנה שחקנים מהקבוצות שנמחקות לרשימת זמינים
-    const removed = existing.slice(num);
-    const returned = removed.flatMap(t => t.playerIds);
-    next.forEach((t, i) => { if (i >= existing.length) t.playerIds = []; });
-    // מחזירים את השחקנים לרשימת זמינים (בפועל: פשוט לא להכניסם ל-next)
     setTeams(next);
   };
 
-  // הסתר/הצג ציונים לכל הקבוצות
   const toggleAllRatings = () => {
-    const anyShown = current.teams.some(t => t.showRatings);
-    const next = current.teams.map(t => ({ ...t, showRatings: !anyShown }));
+    const anyShown = current.teams.some((t) => t.showRatings);
+    const next = current.teams.map((t) => ({ ...t, showRatings: !anyShown }));
     setTeams(next);
   };
 
-  // עשה כוחות — חלוקה אוטומטית Greedy
+  // random helper
+  const shuffle = (arr) => {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  };
+
+  // עשה כוחות (רנדומלי בכל לחיצה)
   const autoDistribute = () => {
     const n = teamsCount;
     if (n < 2) return;
-    const picked = availablePlayers.slice().sort((a,b) => b.rating - a.rating);
 
+    const pool = shuffle(availablePlayers).sort((a,b) => b.rating - a.rating); // ערבוב + דירוג
     const teams = Array.from({ length: n }).map((_, i) => ({
       id: current.teams[i]?.id ?? crypto.randomUUID(),
       name: `קבוצה ${i + 1}`,
@@ -69,31 +71,34 @@ export default function TeamMakerPage() {
     const sums = Array(n).fill(0);
     const sizes = Array(n).fill(0);
 
-    // תחילה ננקה ייעודים קיימים
-    // ואז נריץ Greedy: כל פעם נכניס את השחקן לקבוצה עם סכום נמוך יותר ובמקביל נכבד את כלל ±1
-    picked.forEach(p => {
-      // מצא את הקבוצות המועמדות — עם הגודל המינימלי (כדי לכבד ±1)
+    pool.forEach((p) => {
+      // נשמור על כלל ±1: נכניס תחילה לקבוצות בעלות הגודל הנמוך ביותר
       const minSize = Math.min(...sizes);
       const candidates = [];
-      for (let i=0;i<n;i++) if (sizes[i] === minSize) candidates.push(i);
-      // מתוכן נבחר את זו עם סך ניקוד נמוך יותר
-      candidates.sort((i,j) => sums[i] - sums[j]);
-      const idx = candidates[0];
-
+      for (let i = 0; i < n; i++) if (sizes[i] === minSize) candidates.push(i);
+      // מבין המועמדות נבחר את זו עם סך הניקוד הנמוך
+      candidates.sort((i, j) => sums[i] - sums[j]);
+      const idx = candidates[Math.floor(Math.random() * Math.min(2, candidates.length))] ?? candidates[0]; // טיפה רנדום
       teams[idx].playerIds.push(p.id);
-      sizes[idx] += 1;
       sums[idx] += Number(p.rating) || 0;
+      sizes[idx] += 1;
     });
 
     setTeams(teams);
   };
 
-  const printView = () => window.print();
+  const onCreateFixtures = () => {
+    createFixturesFromTeams();
+    // שמור גם Snapshot כדי שה”מחזור“ יופיע במסך המנהל
+    saveSnapshot(`מחזור ${new Date().toLocaleDateString("he-IL")}`);
+  };
+
+  const printView = () => setShowPrint(true);
 
   return (
     <div className="p-4 space-y-4" dir="rtl">
       <div className="flex flex-wrap items-center gap-2 justify-between">
-        <h2 className="text-2xl">עשה כוחות / מחזור</h2>
+        <h2 className="text-2xl">קבוצות</h2>
         <div className="text-sm text-[#9fb0cb]">
           שחקנים זמינים: <b>{totals.total}</b> · משובצים: <b>{totals.assigned}</b> · פנויים: <b>{totals.free}</b>
         </div>
@@ -108,21 +113,23 @@ export default function TeamMakerPage() {
             onChange={(e) => handleChangeTeamsCount(e.target.value)}
             className="rounded-lg bg-[#0b1220] border border-[#24324a] px-2 py-1"
           >
-            {[2,3,4,5,6].map(n => <option key={n} value={n}>{n}</option>)}
+            {[2,3,4,5,6].map((n) => (
+              <option key={n} value={n}>{n}</option>
+            ))}
           </select>
         </label>
 
         <button onClick={autoDistribute} className="px-3 py-2 rounded-xl bg-[#27c463] text-[#0b1220] hover:opacity-90">
           עשה כוחות
         </button>
-        <button onClick={createFixturesFromTeams} className="px-3 py-2 rounded-xl bg-[#2575fc] text-white hover:opacity-90">
+        <button onClick={onCreateFixtures} className="px-3 py-2 rounded-xl bg-[#2575fc] text-white hover:opacity-90">
           קבע מחזור
         </button>
         <button onClick={printView} className="px-3 py-2 rounded-xl border border-[#24324a] hover:bg-white/5">
           תצוגת הדפסה
         </button>
         <button onClick={toggleAllRatings} className="px-3 py-2 rounded-xl border border-[#24324a] hover:bg-white/5">
-          {current.teams.some(t => t.showRatings) ? "הסתר ציונים" : "הצג ציונים"}
+          {current.teams.some((t) => t.showRatings) ? "הסתר ציונים" : "הצג ציונים"}
         </button>
         {!balanced && <span className="text-[#ff5c7a]">⚠ חלוקה לא מאוזנת (כלל ±1)</span>}
       </div>
@@ -130,12 +137,12 @@ export default function TeamMakerPage() {
       {/* כרטיסי קבוצות */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
         {current.teams.map((team, i) => {
-          const stats = teamStats.find(t => t.id === team.id);
+          const stats = teamStats.find((t) => t.id === team.id);
           return (
             <div
               key={team.id}
               className="rounded-2xl bg-[#0f1a2e] border border-[#24324a] p-3 flex flex-col print-card"
-              onDragOver={(e)=>e.preventDefault()}
+              onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => {
                 const playerId = e.dataTransfer.getData("playerId");
                 const fromTeamId = e.dataTransfer.getData("fromTeamId");
@@ -143,15 +150,15 @@ export default function TeamMakerPage() {
               }}
             >
               <div className="flex justify-between items-center mb-2">
-                <h3 className="text-lg">קבוצה {i+1}</h3>
+                <h3 className="text-lg">קבוצה {i + 1}</h3>
                 <span className="text-xs text-[#9fb0cb]">
                   שחקנים: {stats?.count ?? 0} · ממוצע: {stats?.avg ?? 0} · סך: {stats?.sum ?? 0}
                 </span>
               </div>
 
               <div className="flex-1 overflow-auto space-y-1 min-h-[120px]">
-                {team.playerIds.map(pid => {
-                  const p = players.find(x => x.id === pid);
+                {team.playerIds.map((pid) => {
+                  const p = players.find((x) => x.id === pid);
                   if (!p) return null;
                   return (
                     <div
@@ -181,7 +188,7 @@ export default function TeamMakerPage() {
       <div className="rounded-2xl bg-[#0f1a2e] border border-[#24324a] p-3">
         <h3 className="text-lg mb-2">רשימת שחקנים זמינים</h3>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 max-h-[50vh] overflow-auto">
-          {unassigned.map(p => (
+          {unassigned.map((p) => (
             <div
               key={p.id}
               draggable
@@ -201,6 +208,14 @@ export default function TeamMakerPage() {
           )}
         </div>
       </div>
+
+      {showPrint && (
+        <PrintPreview
+          teams={current.teams}
+          players={players}
+          onClose={() => setShowPrint(false)}
+        />
+      )}
     </div>
   );
 }
