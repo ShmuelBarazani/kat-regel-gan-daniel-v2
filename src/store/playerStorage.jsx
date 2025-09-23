@@ -10,6 +10,17 @@ import {
 } from "../lib/storage";
 import seed from "../data/players.json";
 
+// סניטציה בטוחה לאובייקט שחקן חיצוני (הפורמט שלך)
+const sanitizeExternal = (p) => ({
+  id: p?.id ?? Date.now(),
+  name: String(p?.name ?? ""),
+  r: Number.isFinite(+p?.r) ? +p.r : 0,
+  pos: ["GK","DF","MF","FW"].includes(p?.pos) ? p.pos : "MF",
+  selected: !!p?.selected,
+  prefer: Array.isArray(p?.prefer) ? p.prefer.filter(Number.isFinite) : [],
+  avoid: Array.isArray(p?.avoid) ? p.avoid.filter(Number.isFinite) : [],
+});
+
 // מיפוי דו-כיווני בין הסכמה שלך לסכמה פנימית
 const toInternal = (p) => ({
   id: p.id,
@@ -32,14 +43,29 @@ const toExternal = (p) => ({
 
 const AppCtx = createContext(null);
 
+const safeArray = (arr) => (Array.isArray(arr) ? arr : []);
+
 const initial = () => {
-  const lsPlayers = loadPlayers();
-  const base = lsPlayers && Array.isArray(lsPlayers) ? lsPlayers : seed;
-  return {
-    players: base.map(toInternal),
-    cycles: loadCycles(),
-    settings: loadSettings(),
-  };
+  try {
+    // נסיון טעינה מ-LS בפורמט החיצוני שלך
+    const lsPlayers = loadPlayers();
+    const baseRaw = lsPlayers && Array.isArray(lsPlayers) ? lsPlayers : seed;
+    const base = baseRaw.map(sanitizeExternal);
+
+    return {
+      players: base.map(toInternal),
+      cycles: safeArray(loadCycles()),
+      settings: loadSettings() ?? { bonus: true },
+    };
+  } catch (e) {
+    console.error("[initial state] failed, falling back to seed", e);
+    const base = safeArray(seed).map(sanitizeExternal);
+    return {
+      players: base.map(toInternal),
+      cycles: [],
+      settings: { bonus: true },
+    };
+  }
 };
 
 function reducer(state, action) {
@@ -67,7 +93,7 @@ function reducer(state, action) {
       return { ...state, players };
     }
     case "cycles/set": {
-      const cycles = action.cycles;
+      const cycles = safeArray(action.cycles);
       saveCycles(cycles);
       return { ...state, cycles };
     }
@@ -110,5 +136,5 @@ export function AppProvider({ children }) {
 // הקרס המרכזי לשימוש באפליקציה
 export const useApp = () => useContext(AppCtx);
 
-// Alias לשם הישן כדי למנוע שגיאות Build בקבצים קיימים
+// Alias לשם הישן כדי למנוע שבירה בקבצים קיימים
 export const useAppStore = useApp;
