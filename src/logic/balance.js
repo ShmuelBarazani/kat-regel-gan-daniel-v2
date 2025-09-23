@@ -1,72 +1,54 @@
 // src/logic/balance.js
+// איזון קבוצות: שומר על הפרש גודל ≤ ±1, ממזער סכומי דירוג, ומתחשב ב-must/avoid רך.
 
-/**
- * חשב סטטיסטיקות לכל קבוצה.
- * @param {Array<{id:string, name:string, playerIds:string[]}>} teams
- * @param {Array<{id:string, rating:number}>} players
- */
-export function computeTeamStats(teams, players) {
-  const byId = new Map(players.map((p) => [p.id, p]));
-  return teams.map((t) => {
-    const ps = (t.playerIds ?? []).map((pid) => byId.get(pid)).filter(Boolean);
-    const count = ps.length;
-    const sum = ps.reduce((acc, p) => acc + (Number(p.rating) || 0), 0);
-    const avg = count ? +(sum / count).toFixed(2) : 0;
-    return { id: t.id, name: t.name, count, sum, avg };
-  });
-}
+const clone = (o) => JSON.parse(JSON.stringify(o));
 
-/**
- * בדוק האם כל הפערים בין גדלי הקבוצות עומדים בכלל ±1.
- */
-export function isBalanced(teams) {
-  const sizes = teams.map((t) => (t.playerIds?.length ?? 0));
-  if (sizes.length <= 1) return true;
-  const min = Math.min(...sizes);
-  const max = Math.max(...sizes);
-  return max - min <= 1;
-}
+export function makeTeams({ players, teamCount = 4 }) {
+  const actives = players.filter((p) => p.active);
+  const pool = clone(actives).sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
+  const teams = Array.from({ length: teamCount }, () => ({ players: [], sum: 0 }));
 
-/**
- * בדיקה האם מותר להעביר שחקן מקבוצה A לב'.
- * @returns {boolean}
- */
-export function canMovePlayer(teams, fromTeamId, toTeamId) {
-  if (fromTeamId === toTeamId) return true;
-  const sizes = new Map(teams.map((t) => [t.id, t.playerIds?.length ?? 0]));
-  const fromSize = sizes.get(fromTeamId) ?? 0;
-  const toSize = sizes.get(toTeamId) ?? 0;
+  const targetMin = Math.floor(pool.length / teamCount);
+  const targetMax = Math.ceil(pool.length / teamCount);
 
-  // לאחר ההעברה: מקור קטן באחד, יעד גדול באחד
-  const newMin = Math.min(...teams.map((t) =>
-    t.id === fromTeamId ? fromSize - 1 : t.id === toTeamId ? toSize + 1 : (t.playerIds?.length ?? 0)
-  ));
-  const newMax = Math.max(...teams.map((t) =>
-    t.id === fromTeamId ? fromSize - 1 : t.id === toTeamId ? toSize + 1 : (t.playerIds?.length ?? 0)
-  ));
+  const canAddTo = (ti) => teams[ti].players.length < targetMax;
+  const violatesAvoid = (ti, p) =>
+    teams[ti].players.some((x) => x.avoidWith?.includes(p.id) || p.avoidWith?.includes(x.id));
+  const satisfiesMust = (ti, p) => {
+    if (!p.mustWith?.length) return true;
+    const ids = teams[ti].players.map((x) => x.id);
+    return p.mustWith.some((id) => ids.includes(id)) || teams[ti].players.length === 0;
+  };
 
-  return newMax - newMin <= 1;
-}
-
-/**
- * העבר שחקן בפועל בין קבוצות, תוך אכיפת כלל ±1.
- * אם לא חוקי — מחזיר את המערך המקורי ללא שינוי.
- */
-export function movePlayerBalanced(teams, playerId, fromTeamId, toTeamId) {
-  if (!canMovePlayer(teams, fromTeamId, toTeamId)) return teams;
-  const clone = teams.map((t) => ({ ...t, playerIds: [...(t.playerIds ?? [])] }));
-
-  const from = clone.find((t) => t.id === fromTeamId);
-  const to = clone.find((t) => t.id === toTeamId);
-  if (!to) return teams;
-
-  if (from) {
-    from.playerIds = from.playerIds.filter((id) => id !== playerId);
-  } else {
-    // ייתכן ששחקן לא היה משוייך — זה בסדר
+  for (const p of pool) {
+    let bestIdx = -1,
+      bestScore = Infinity;
+    for (let i = 0; i < teamCount; i++) {
+      if (!canAddTo(i)) continue;
+      if (violatesAvoid(i, p)) continue;
+      const mustOk = satisfiesMust(i, p);
+      const score = teams[i].sum + (mustOk ? 0.001 : 0.5);
+      if (score < bestScore) {
+        bestScore = score;
+        bestIdx = i;
+      }
+    }
+    if (bestIdx === -1) {
+      // נפילה רכה: הכי קצרה ואז סכום נמוך
+      let candidate = [...teams.keys()]
+        .map((i) => ({ i, len: teams[i].players.length, sum: teams[i].sum }))
+        .sort((a, b) => a.len - b.len || a.sum - b.sum)[0]?.i ?? 0;
+      bestIdx = candidate;
+    }
+    teams[bestIdx].players.push(p);
+    teams[bestIdx].sum += p.rating ?? 0;
   }
-  if (!to.playerIds.includes(playerId)) {
-    to.playerIds.push(playerId);
-  }
-  return clone;
+
+  return teams.map((t, idx) => ({
+    id: idx + 1,
+    name: `קבוצה ${idx + 1}`,
+    players: t.players,
+    sum: t.sum,
+    avg: t.players.length ? +(t.sum / t.players.length).toFixed(2) : 0,
+  }));
 }
