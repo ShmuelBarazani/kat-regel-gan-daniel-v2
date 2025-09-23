@@ -1,22 +1,24 @@
 // src/pages/Ranking.jsx
 import React from "react";
-import Leaderboards from "@/components/Leaderboards";
+import { useApp } from "../store/playerStorage";
+import Leaderboards from "../components/Leaderboards";
 
-export default function RankingPage() {
-  const dummyMonthly = [];
-  const dummyYearly = [];
-  const dummyMonthChamps = [];
-  const dummySessions = [];
-
+export default function Ranking() {
+  const { state, setSettings } = useApp();
   return (
-    <div className="p-4" dir="rtl">
-      <h2 className="text-2xl mb-4">דירוגים</h2>
-      <Leaderboards
-        monthlyTop={dummyMonthly}
-        yearlyTop={dummyYearly}
-        monthChampions={dummyMonthChamps}
-        sessions={dummySessions}
-      />
+    <div className="page" dir="rtl">
+      <div className="flex items-center justify-between mb-3">
+        <h1 className="title">דירוג</h1>
+        <label className="inline-flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={!!state.settings.bonus}
+            onChange={(e) => setSettings({ bonus: e.target.checked })}
+          />
+          עם בונוס
+        </label>
+      </div>
+      <Leaderboards />
     </div>
   );
 }
