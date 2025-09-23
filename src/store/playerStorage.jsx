@@ -51,20 +51,37 @@ const safeArray = (arr) => (Array.isArray(arr) ? arr : []);
 
 const DEFAULT_SETTINGS = {
   bonus: true,
-  // כדי לכסות רכיבים ישנים שצורכים settings.sortBy/sortDir:
   sortBy: "name",
   sortDir: "asc",
 };
 
 const DEFAULT_UI = {
-  // כדי לכסות רכיבים אחרים שצורכים ui.sortBy/ui.sortDir:
   sortBy: "name",
   sortDir: "asc",
 };
 
-/* ---------- Context ---------- */
+/* ---------- Context + Fallback ---------- */
 
 const AppCtx = createContext(null);
+
+// Fallback מלא במקרה שמישהו קורא לקרס לפני ה-Provider
+const NOOP = () => {};
+const FALLBACK = {
+  state: {
+    players: [],
+    cycles: [],
+    settings: { ...DEFAULT_SETTINGS },
+    ui: { ...DEFAULT_UI },
+  },
+  setPlayers: NOOP,
+  addPlayer: NOOP,
+  updatePlayer: NOOP,
+  deletePlayer: NOOP,
+  addCycle: NOOP,
+  setCycles: NOOP,
+  setSettings: NOOP,
+  setUI: NOOP,
+};
 
 /* ---------- Initial State ---------- */
 
@@ -140,9 +157,7 @@ function reducer(state, action) {
     // הגדרות — נשמר גם ב-LS וגם מסתנכרן ל-ui
     case "settings/set": {
       const nextSettings = { ...state.settings, ...action.patch };
-      // שמירה
       saveSettings(nextSettings);
-      // סנכרון שדות מיון ל-ui עבור תאימות לאחור
       const nextUI = {
         ...state.ui,
         sortBy:
@@ -157,10 +172,9 @@ function reducer(state, action) {
       return { ...state, settings: nextSettings, ui: nextUI };
     }
 
-    // תמיכה גם בפעולה מפורשת על ui (אם יש רכיבים ישנים שמעדכנים אותה)
+    // במידה ורכיב ישן מעדכן UI ישירות
     case "ui/set": {
       const ui = { ...state.ui, ...action.patch };
-      // משקף גם ל-settings לשמירת תאימות
       const settings = {
         ...state.settings,
         sortBy: ui.sortBy ?? state.settings.sortBy ?? DEFAULT_SETTINGS.sortBy,
@@ -204,8 +218,13 @@ export function AppProvider({ children }) {
   return <AppCtx.Provider value={api}>{children}</AppCtx.Provider>;
 }
 
-// הקרס המרכזי לשימוש באפליקציה
-export const useApp = () => useContext(AppCtx);
+/* ---------- Hooks ---------- */
+
+export const useApp = () => {
+  const ctx = useContext(AppCtx);
+  // אם בטעות נקרא מחוץ ל-Provider – מחזיר Fallback כדי לא לקרוס
+  return ctx ?? FALLBACK;
+};
 
 // Alias לשם הישן כדי למנוע שבירה בקבצים קיימים
 export const useAppStore = useApp;
