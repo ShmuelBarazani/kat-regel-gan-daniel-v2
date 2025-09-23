@@ -1,14 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
-/**
- * PlayerFormModal
- * props:
- * - open: boolean
- * - onClose: () => void
- * - onSubmit: (player) => void
- * - initial: { id?, name, pos, rating, plays, mustWith[], avoidWith[] }
- * - existingPlayers: Array<{id,name}>  ← לרשימות הבחירה
- */
 export default function PlayerFormModal({
   open,
   onClose,
@@ -31,8 +22,8 @@ export default function PlayerFormModal({
     setPos(initial?.pos ?? "MF");
     setRating(typeof initial?.rating === "number" ? String(initial.rating) : "5");
     setPlays(initial?.plays ?? true);
-    setMustWith(initial?.mustWith ?? []);
-    setAvoidWith(initial?.avoidWith ?? []);
+    setMustWith(Array.isArray(initial?.mustWith) ? initial.mustWith : []);
+    setAvoidWith(Array.isArray(initial?.avoidWith) ? initial.avoidWith : []);
   }, [initial, open]);
 
   useEffect(() => {
@@ -42,12 +33,14 @@ export default function PlayerFormModal({
   if (!open) return null;
 
   const options = useMemo(() => {
+    const base = Array.isArray(existingPlayers) ? existingPlayers : [];
     const cur = (initial?.name ?? "").trim();
-    return existingPlayers
-      .map(p => p.name)
+    return base
+      .map((p) => (typeof p === "string" ? p : p?.name))
       .filter(Boolean)
-      .filter(n => n.trim() && n.trim() !== cur)
-      .sort((a,b) => a.localeCompare(b, "he"));
+      .map((s) => String(s))
+      .filter((n) => n.trim() && n.trim() !== cur)
+      .sort((a, b) => a.localeCompare(b, "he"));
   }, [existingPlayers, initial]);
 
   const handleSubmit = (e) => {
@@ -69,15 +62,17 @@ export default function PlayerFormModal({
     onSubmit?.(player);
   };
 
-  // Multi-select helpers
   const onMultiChange = (setter) => (e) => {
-    const selected = Array.from(e.target.selectedOptions).map(o => o.value);
+    const selected = Array.from(e.target.selectedOptions).map((o) => o.value);
     setter(selected);
   };
 
   return (
-    <div className="fixed inset-0 z-[999] flex items-center justify-center" role="dialog" aria-modal="true">
-      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center" role="dialog" aria-modal="true">
+      <div
+        className="absolute inset-0 bg-black/60"
+        onClick={onClose}
+      />
       <form
         onSubmit={handleSubmit}
         className="relative w-[min(680px,96vw)] rounded-2xl bg-[#0f1a2e] text-[#e8eefc] shadow-2xl p-5 border border-[#24324a]"
