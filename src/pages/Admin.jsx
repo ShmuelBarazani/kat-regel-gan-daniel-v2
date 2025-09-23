@@ -1,67 +1,46 @@
 // src/pages/Admin.jsx
-import React from "react";
-import { useAppStore } from "@/store/playerStorage.jsx";
-import MatchdayResults from "@/components/MatchdayResults";
-import SavedCycles from "@/components/SavedCycles";
+import React, { useState } from "react";
+import { useApp } from "../store/playerStorage";
+import SavedCycles from "../components/SavedCycles";
+import MatchdayResults from "../components/MatchdayResults";
 
-export default function AdminPage() {
-  const {
-    players, current,
-    setFixtureScore, setScorer, createFixturesFromTeams,
-    saveSnapshot, openSnapshot, deleteCycle,
-    cycles, exportAll, importAll
-  } = useAppStore();
+export default function Admin() {
+  const { state, setCycles } = useApp();
+  const [openId, setOpenId] = useState(null);
+  const cycle = state.cycles.find((c) => c.id === openId) || state.cycles.at(-1);
 
-  const playersByTeam = {};
-  current.teams.forEach(t => {
-    playersByTeam[t.id] = t.playerIds.map(pid => {
-      const p = players.find(x => x.id === pid);
-      return { ...p, teamName: t.name };
-    }).filter(Boolean);
-  });
+  const onChange = (patch) => {
+    const next = state.cycles.map((c) => (c.id === patch.id ? patch : c));
+    setCycles(next);
+  };
 
   return (
-    <div className="p-4 space-y-4" dir="rtl">
-      <h2 className="text-2xl">מנהל</h2>
-
-      <button
-        onClick={createFixturesFromTeams}
-        className="px-4 py-2 rounded-xl bg-[#2575fc] text-white hover:opacity-90"
-      >
-        פתח מחזור (צור משחקים)
-      </button>
-
-      <MatchdayResults
-        teams={current.teams}
-        fixtures={current.fixtures}
-        onChangeFixture={setFixtureScore}
-        scorers={current.scorers}
-        playersByTeam={playersByTeam}
-        onChangeScorer={setScorer}
-      />
-
-      <SavedCycles
-        cycles={cycles}
-        onOpen={openSnapshot}
-        onDelete={deleteCycle}
-        onExportAll={() => {
-          const blob = new Blob([exportAll()], { type: "application/json" });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = "katregel_export.json";
-          a.click();
-          URL.revokeObjectURL(url);
-        }}
-        onImportFile={(txt) => {
-          try { importAll(txt); alert("ייבוא הושלם בהצלחה"); }
-          catch (e) { alert("שגיאת ייבוא: " + e.message); }
-        }}
-      />
-
-      <div className="text-sm text-[#9fb0cb]">
-        ⚙️ כאן תוכל לשמור מחזור בשם ולייבא/לייצא נתונים.
+    <div className="page" dir="rtl">
+      <div className="flex items-center justify-between mb-3">
+        <h1 className="title">מנהל</h1>
+        <div className="flex gap-2 items-center">
+          <label>
+            פתח מחזור:
+            <select className="input ml-2" value={openId || ""} onChange={(e) => setOpenId(+e.target.value || null)}>
+              <option value="">(אחרון)</option>
+              {state.cycles.map((c) => (
+                <option key={c.id} value={c.id}>#{c.id}</option>
+              ))}
+            </select>
+          </label>
+        </div>
       </div>
+
+      {cycle ? (
+        <div className="grid gap-4">
+          <MatchdayResults cycle={cycle} onChange={onChange} />
+        </div>
+      ) : (
+        <div className="muted">אין מחזורים לפתיחה. צור מחזור במסך "קבוצות" באמצעות "קבע מחזור".</div>
+      )}
+
+      <div className="divider" />
+      <SavedCycles />
     </div>
   );
 }
